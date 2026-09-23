@@ -353,3 +353,25 @@ test('wallet mainnet verification accepts full genesis hash and rejects other ne
   wallet.connection.getGenesisHash = async () => 'devnet';
   await assert.rejects(wallet.verifyNetwork(), /mainnet/);
 });
+
+
+test('Mini App exposes saved buy/sell receipts in time order and separates paper/live history', async t => {
+  const f = fixture(t), token = '123:secret', owner = '456';
+  const buy = { id: 'ui-buy', mode: 'paper', side: 'buy', reason: 'EMA crossed up', input: 'SOL', output: 'DOGE', amount: '25000000', notional: '25000000', time: 100, day: '2026-09-24' };
+  f.engine.fill(buy, '25000000', '2700000000');
+  const sell = { id: 'ui-sell', mode: 'paper', side: 'sell', reason: 'take profit', input: 'DOGE', output: 'SOL', amount: '2700000000', notional: '27000000', time: 200, day: '2026-09-24' };
+  f.engine.fill(sell, '2700000000', '27000000');
+  f.store.put(f.store.order('ui-buy')); // Updating an older receipt must not move it ahead of a newer transaction.
+  f.store.put({ ...buy, id: 'live-other', mode: 'live', time: 300, status: 'unknown', signature: 'test-signature' });
+  const server = appServer(f.engine, { token, owner });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/api/state`;
+  assert.equal((await fetch(url)).status, 401);
+  const data = await (await fetch(url, { headers: { Authorization: 'tma ' + signedAuth(token, owner) } })).json();
+  assert.equal(data.tradeCount, 2);
+  assert.deepEqual(data.trades.map(o => o.id), ['ui-sell', 'ui-buy']);
+  assert.equal(data.trades[0].received, '0.027'); assert.equal(data.trades[0].amount, '27');
+  assert.equal(data.trades[1].received, '27'); assert.equal(data.trades[1].amount, '0.025');
+  assert.ok(data.trades.every(o => o.mode === 'paper' && o.status === 'filled'));
+});
