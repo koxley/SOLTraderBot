@@ -208,6 +208,10 @@ $('strategy-form').addEventListener('submit', async event => {
   } catch (error) { text('settings-error', error.message); $('settings-error').hidden = false; }
   finally { savingSettings = false; if (state) render(state); }
 });
-refresh(); balances();
+async function openApp() {
+  try { await api('paper/reset-balance', 'POST'); } catch (error) { toast(error.message); }
+  await refresh(); await balances();
+}
+openApp();
 setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 setInterval(() => { if (!document.hidden) { balances(); if (activeView === 'wallet-view') wallet(); } }, 15000);
