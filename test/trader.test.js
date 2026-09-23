@@ -129,6 +129,33 @@ test('cbBTC wallet balance and receipt readers use the approved mint', async () 
   assert.deepEqual(await wallet.receipt({input:'SOL',side:'buy',signature:'mock'}),{input:'25000000',output:'5000'});
 });
 
+test('display price refreshes at five seconds while chart samples stay fifteen seconds apart', async t => {
+  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  let now = 150000, requests = 0;
+  const provider = { async quote(input, output, amount) {
+    requests++;
+    return {inputMint:cfg.tokens[input].mint,outputMint:cfg.tokens[output].mint,inAmount:amount,
+      outAmount:String(500000000000n+BigInt(requests)*1000000000n),otherAmountThreshold:'400000000000',slippageBps:3000,swapMode:'ExactIn'};
+  } };
+  cfg.slippage = 3000;
+  const engine=new Engine(cfg,store,provider), token='123:secret', owner='456';
+  const server=appServer(engine,{token,owner,clock:()=>now});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const url=`http://127.0.0.1:${server.address().port}/api/price`, headers={Authorization:'tma '+signedAuth(token,owner)};
+  assert.equal((await fetch(url)).status,401); assert.equal(requests,0);
+  const read=async()=>{const response=await fetch(url,{headers}); assert.equal(response.status,200); return response.json();};
+  assert.equal((await read()).price,501); assert.equal((await read()).price,501); assert.equal(requests,1);
+  now+=5000; assert.equal((await read()).price,502); assert.equal(snapshot(engine).samples.length,1);
+  now+=5000; await read(); assert.equal(snapshot(engine).samples.length,1);
+  now+=5000; await read(); const samples=snapshot(engine).samples;
+  assert.equal(samples.length,2); assert.equal(samples[1].time-samples[0].time,15000);
+  assert.equal(engine.active(),false); assert.equal(engine.orders().length,0);
+  assert.equal(store.get(engine.key('samples')),undefined); assert.equal(snapshot(engine).warmup,0);
+  now+=5000; provider.quote=async()=>{throw new Error('provider unavailable');};
+  assert.equal((await fetch(url,{headers})).status,503); assert.equal(snapshot(engine).samples.length,2);
+});
+
 const mint = 'DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R';
 function fixture(t, env = {}) {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3', ...env }, false);
