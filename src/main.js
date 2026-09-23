@@ -48,9 +48,12 @@ try {
   console.log(`SOL TRADER started in ${cfg.mode.toUpperCase()} mode. Mini App on port ${port}. Strategy STOPPED.`);
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);
   await telegram.poll();
-} catch {
-  // Do not print provider errors, tokens, RPC URLs, or key material.
-  console.error('Startup failed. Check .env, wallet file, network access, and whether another instance is running. Run npm test to verify the installation.');
-  if (release) await release();
-  process.exitCode = 1;
+} catch (error) {
+  console.error('Startup error:', error?.message || 'Unknown error');
 }
+#} catch {
+#  // Do not print provider errors, tokens, RPC URLs, or key material.
+#  console.error('Startup failed. Check .env, wallet file, network access, and whether another instance is running. Run npm test to verify the installation.');
+#  if (release) await release();
+#  process.exitCode = 1;
+#}
