@@ -65,7 +65,7 @@ test('editable paper balance persists as the reset amount and preserves position
   f.engine.start(); assert.throws(() => f.engine.setPaperBalance('3'), /Stop the bot/);
   f.engine.stop(); f.engine.busy = true; assert.throws(() => f.engine.setPaperBalance('3'), /Stop the bot/);
   f.engine.busy = false;
-  const restarted = new Engine(makeConfig({}, false), f.store, f.provider);
+  const restarted = new Engine(makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), f.store, f.provider);
   restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '2123456789');
   restarted.setPaperBalance('0'); restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '0');
   restarted.cfg.mode = 'live'; assert.throws(() => restarted.setPaperBalance('4'), /Live balances/);
@@ -82,6 +82,51 @@ test('paper balance endpoint requires owner authentication and same origin', asy
   assert.equal((await fetch(url,{method:'POST',body,headers:{...headers,Origin:'https://wrong.example'}})).status,403);
   const response=await fetch(url,{method:'POST',body,headers}); assert.equal(response.status,200);
   assert.equal((await response.json()).paperStartingBalance,'3.5'); assert.equal((await f.engine.balances()).SOL,'3500000000');
+});
+
+test('default cbBTC market buys eight-decimal cbBTC with SOL and closes only its position', async t => {
+  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  assert.equal(cfg.base, 'cbBTC'); assert.equal(cfg.splToken, 'cbBTC'); assert.equal(cfg.tokens.cbBTC.decimals, 8);
+  assert.equal(cfg.tokens.cbBTC.mint, 'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij');
+  const calls = [];
+  const provider = { async quote(input, output, amount) {
+    calls.push({input,output,amount});
+    const out = input === 'SOL' ? BigInt(amount) * 100000000n / 500000000000n : BigInt(amount) * 500000000000n / 100000000n;
+    return {inputMint:cfg.tokens[input].mint,outputMint:cfg.tokens[output].mint,inAmount:amount,
+      outAmount:String(out),otherAmountThreshold:String(out),slippageBps:50,swapMode:'ExactIn'};
+  } };
+  const engine = new Engine(cfg, store, provider); engine.start();
+  await engine.trade({side:'buy',reason:'test'});
+  assert.deepEqual(calls[0],{input:'SOL',output:'cbBTC',amount:'25000000'});
+  assert.equal(engine.position().amount,'5000'); assert.equal(snapshot(engine).position.amount,'0.00005');
+  assert.equal(snapshot(engine).trades[0].received,'0.00005');
+  assert.equal(snapshot(engine).tokenDecimals,8);
+  const balance=await engine.balances(); store.set(engine.paperKey(),{...balance,cbBTC:'6000'});
+  engine.requestClose(); await engine.trade({side:'sell',reason:'close'},true);
+  assert.deepEqual(calls[1],{input:'cbBTC',output:'SOL',amount:'5000'});
+  assert.equal((await engine.balances()).cbBTC,'1000'); assert.equal(engine.position(),null);
+});
+
+test('cbBTC migration carries SOL settings but isolates previous holdings and blocks live exposure', t => {
+  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  store.set('USDC_SOL:paper:startingBalance','2500000000');
+  store.set('USDC_SOL:paper:strategy',{...strategySettings(cfg),size:'0.03'});
+  store.set('USDC_SOL:paper:position',{amount:'20',cost:'10'});
+  const engine = new Engine(cfg,store,{}); engine.resetPaperSOL();
+  assert.equal((store.get(engine.paperKey())).SOL,'2500000000'); assert.equal(cfg.tradeSize,'30000000');
+  assert.equal(engine.position(),null); assert.equal(store.get('USDC_SOL:paper:position').amount,'20');
+  store.set('USDC_SOL:live:position',{amount:'20',cost:'10'});
+  assert.throws(()=>new Engine(makeConfig({},false),store,{}),/changing trading direction/);
+});
+
+test('cbBTC wallet balance and receipt readers use the approved mint', async () => {
+  const cfg=makeConfig({},false), wallet=new Wallet(cfg,Keypair.generate()); let requested;
+  wallet.connection={async getBalance(){return 1000000000;},async getParsedTokenAccountsByOwner(owner,filter){
+    requested=filter.mint.toBase58();return {value:[{account:{data:{parsed:{info:{tokenAmount:{amount:'12345'}}}}}}]};
+  },async getTransaction(){return {meta:{err:null,fee:5000,preBalances:[1000000000],postBalances:[974995000],
+    preTokenBalances:[],postTokenBalances:[{owner:wallet.address,mint:cfg.tokens.cbBTC.mint,uiTokenAmount:{amount:'5000'}}]}};}};
+  assert.deepEqual(await wallet.balances(),{SOL:'1000000000',cbBTC:'12345'}); assert.equal(requested,cfg.tokens.cbBTC.mint);
+  assert.deepEqual(await wallet.receipt({input:'SOL',side:'buy',signature:'mock'}),{input:'25000000',output:'5000'});
 });
 
 const mint = 'DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R';
@@ -477,7 +522,7 @@ test('SOL/USDC reconciles buy and sell receipts in the correct direction', async
 });
 
 test('default SOL-funded USDC strategy buys and closes using the original direction', async t => {
-  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  const cfg = makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   assert.equal(cfg.base, 'USDC'); assert.equal(cfg.quote, 'SOL'); assert.equal(cfg.quoteDecimals, 9);
   assert.equal(cfg.tradeSize, '25000000'); assert.equal(cfg.paper.USDC, '0');
   const calls = [];
@@ -492,7 +537,7 @@ test('default SOL-funded USDC strategy buys and closes using the original direct
   engine.start(); await engine.trade({ side: 'buy', reason: 'test' });
   assert.deepEqual(calls[0], { input: 'SOL', output: 'USDC', amount: '25000000' });
   assert.equal(engine.position().amount, '5000000');
-  assert.deepEqual(await engine.balances(), { SOL: '975000000', USDC: '5000000', DOGE: '0' });
+  assert.deepEqual(await engine.balances(), { SOL: '975000000', USDC: '5000000', DOGE: '0', cbBTC: '0' });
   store.set(engine.key('samples'), [{ time: Date.now(), price: '5000000' }]);
   assert.equal(snapshot(engine).price, 0.005); assert.equal(snapshot(engine).position.amount, '5');
   assert.equal(snapshot(engine).position.cost, '0.025');
@@ -504,11 +549,11 @@ test('default SOL-funded USDC strategy buys and closes using the original direct
   assert.equal((await engine.balances()).USDC, '0');
   engine.stop(); engine.configure({ ...strategySettings(cfg), size: '0.012345678' }); assert.equal(cfg.tradeSize, '12345678');
   store.set('SOL_USDC:live:position', { amount: '999', cost: '123' });
-  assert.throws(() => new Engine(makeConfig({}, false), store, provider), /changing trading direction/);
+  assert.throws(() => new Engine(makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), store, provider), /changing trading direction/);
 });
 
 test('SOL-funded USDC receipt reconciliation respects token direction', async () => {
-  const cfg = makeConfig({}, false), wallet = new Wallet(cfg, Keypair.generate());
+  const cfg = makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), wallet = new Wallet(cfg, Keypair.generate());
   const token = amount => [{ owner: wallet.address, mint: cfg.tokens.USDC.mint, uiTokenAmount: { amount: String(amount) } }];
   let buy = true;
   wallet.connection = { async getTransaction() { return { meta: { err: null, fee: 5000,
