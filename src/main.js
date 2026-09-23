@@ -51,9 +51,3 @@ try {
 } catch (error) {
   console.error('Startup error:', error?.message || 'Unknown error');
 }
-#} catch {
-#  // Do not print provider errors, tokens, RPC URLs, or key material.
-#  console.error('Startup failed. Check .env, wallet file, network access, and whether another instance is running. Run npm test to verify the installation.');
-#  if (release) await release();
-#  process.exitCode = 1;
-#}
