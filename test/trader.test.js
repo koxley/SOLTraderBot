@@ -380,7 +380,7 @@ test('Mini App exposes saved buy/sell receipts in time order and separates paper
 
 
 test('SOL/USDC buys SOL using six-decimal USDC and closes only its tracked SOL', async t => {
-  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  const cfg = makeConfig({ TRADING_PAIR: 'SOL_USDC' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   const calls = [];
   const provider = { async quote(input, output, amount) {
     calls.push({ input, output, amount });
@@ -403,17 +403,17 @@ test('SOL/USDC buys SOL using six-decimal USDC and closes only its tracked SOL',
 });
 
 test('SOL/USDC keeps legacy paper state isolated and blocks legacy live exposure', t => {
-  const cfg=makeConfig({},false), store=new Store(':memory:',{SOL:'2',DOGE:'99'}); t.after(()=>store.close());
+  const cfg=makeConfig({ TRADING_PAIR: 'SOL_USDC' },false), store=new Store(':memory:',{SOL:'2',DOGE:'99'}); t.after(()=>store.close());
   store.set('market','old-doge-mint:8'); store.set('paper:position',{amount:'99',cost:'2'});
   store.put({id:'legacy',mode:'paper',side:'buy',status:'filled',time:1});
   const engine=new Engine(cfg,store,{}); assert.equal(engine.position(),null); assert.equal(engine.orders().length,0);
   assert.deepEqual(store.get('paper'),{SOL:'2',DOGE:'99'}); assert.equal((store.get(engine.paperKey())).USDC,'1000000');
   store.set('live:position',{amount:'99',cost:'2'});
-  assert.throws(()=>new Engine(makeConfig({},false),store,{}),/legacy DOGE/);
+  assert.throws(()=>new Engine(makeConfig({ TRADING_PAIR: 'SOL_USDC' },false),store,{}),/legacy DOGE/);
 });
 
 test('SOL/USDC live buy preflight verifies USDC spent and SOL received', async () => {
-  const cfg = makeConfig({}, false), signer = Keypair.generate(), wallet = new Wallet(cfg, signer);
+  const cfg = makeConfig({ TRADING_PAIR: 'SOL_USDC' }, false), signer = Keypair.generate(), wallet = new Wallet(cfg, signer);
   const tx = new VersionedTransaction(new TransactionMessage({ payerKey: signer.publicKey,
     recentBlockhash: Keypair.generate().publicKey.toBase58(), instructions: [] }).compileToV0Message());
   const tokenData = value => { const data = Buffer.alloc(165); data.writeBigUInt64LE(value, 64); return data; };
@@ -432,7 +432,7 @@ test('SOL/USDC live buy preflight verifies USDC spent and SOL received', async (
 });
 
 test('SOL/USDC reconciles buy and sell receipts in the correct direction', async () => {
-  const cfg = makeConfig({}, false), wallet = new Wallet(cfg, Keypair.generate());
+  const cfg = makeConfig({ TRADING_PAIR: 'SOL_USDC' }, false), wallet = new Wallet(cfg, Keypair.generate());
   const token = amount => [{ owner: wallet.address, mint: cfg.tokens.USDC.mint, uiTokenAmount: { amount: String(amount) } }];
   let buy = true;
   wallet.connection = { async getTransaction() { return { meta: { err: null, fee: 5000,
@@ -443,8 +443,51 @@ test('SOL/USDC reconciles buy and sell receipts in the correct direction', async
   assert.deepEqual(await wallet.receipt({ input: 'SOL', side: 'sell', signature: 'mock' }), { input: '2500000', output: '250000' });
 });
 
+test('default SOL-funded USDC strategy buys and closes using the original direction', async t => {
+  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  assert.equal(cfg.base, 'USDC'); assert.equal(cfg.quote, 'SOL'); assert.equal(cfg.quoteDecimals, 9);
+  assert.equal(cfg.tradeSize, '25000000'); assert.equal(cfg.paper.USDC, '0');
+  const calls = [];
+  const provider = { async quote(input, output, amount) {
+    calls.push({ input, output, amount });
+    const out = input === 'SOL' ? BigInt(amount) * 1000000n / 5000000n : BigInt(amount) * 5000000n / 1000000n;
+    return { inputMint: cfg.tokens[input].mint, outputMint: cfg.tokens[output].mint, inAmount: amount,
+      outAmount: String(out), otherAmountThreshold: String(out), slippageBps: 50, swapMode: 'ExactIn' };
+  } };
+  store.set('SOL_USDC:paper:position', { amount: '999', cost: '123' });
+  const engine = new Engine(cfg, store, provider); assert.equal(engine.position(), null);
+  engine.start(); await engine.trade({ side: 'buy', reason: 'test' });
+  assert.deepEqual(calls[0], { input: 'SOL', output: 'USDC', amount: '25000000' });
+  assert.equal(engine.position().amount, '5000000');
+  assert.deepEqual(await engine.balances(), { SOL: '975000000', USDC: '5000000', DOGE: '0' });
+  store.set(engine.key('samples'), [{ time: Date.now(), price: '5000000' }]);
+  assert.equal(snapshot(engine).price, 0.005); assert.equal(snapshot(engine).position.amount, '5');
+  assert.equal(snapshot(engine).position.cost, '0.025');
+  engine.stop(); engine.resetPaperSOL(); assert.equal((await engine.balances()).SOL, '1000000000');
+  assert.equal((await engine.balances()).USDC, '5000000');
+  engine.requestClose(); await engine.trade({ side: 'sell', reason: 'close' }, true);
+  assert.deepEqual(calls[1], { input: 'USDC', output: 'SOL', amount: '5000000' });
+  assert.equal(engine.position(), null); assert.equal((await engine.balances()).SOL, '1025000000');
+  assert.equal((await engine.balances()).USDC, '0');
+  engine.stop(); engine.configure({ ...strategySettings(cfg), size: '0.012345678' }); assert.equal(cfg.tradeSize, '12345678');
+  store.set('SOL_USDC:live:position', { amount: '999', cost: '123' });
+  assert.throws(() => new Engine(makeConfig({}, false), store, provider), /changing trading direction/);
+});
+
+test('SOL-funded USDC receipt reconciliation respects token direction', async () => {
+  const cfg = makeConfig({}, false), wallet = new Wallet(cfg, Keypair.generate());
+  const token = amount => [{ owner: wallet.address, mint: cfg.tokens.USDC.mint, uiTokenAmount: { amount: String(amount) } }];
+  let buy = true;
+  wallet.connection = { async getTransaction() { return { meta: { err: null, fee: 5000,
+    preBalances: [1000000000], postBalances: [buy ? 974995000 : 1024995000],
+    preTokenBalances: token(buy ? 0 : 5000000), postTokenBalances: token(buy ? 5000000 : 0) } }; } };
+  assert.deepEqual(await wallet.receipt({ input: 'SOL', side: 'buy', signature: 'mock' }), { input: '25000000', output: '5000000' });
+  buy = false;
+  assert.deepEqual(await wallet.receipt({ input: 'USDC', side: 'sell', signature: 'mock' }), { input: '5000000', output: '25000000' });
+});
+
 test('SOL/USDC settings use USDC precision and paper reset leaves live and running balances alone', t => {
-  const cfg=makeConfig({},false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
+  const cfg=makeConfig({ TRADING_PAIR: 'SOL_USDC' },false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
   const engine=new Engine(cfg,store,{});
   engine.configure({...strategySettings(cfg),size:'0.123456'}); assert.equal(cfg.tradeSize,'123456');
   assert.throws(()=>engine.configure({...strategySettings(cfg),size:'0.1234567'}),/6 decimal/);
