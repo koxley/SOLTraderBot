@@ -51,6 +51,39 @@ test('strategy API requires owner authentication and validates request payload',
   assert.equal(f.engine.active(), false);
 });
 
+test('editable paper balance persists as the reset amount and preserves positions', t => {
+  const f = fixture(t, { TRADING_PAIR: 'USDC_SOL' });
+  f.store.set(f.engine.paperKey(), { SOL: '1000000000', USDC: '2000000' });
+  f.store.set(f.engine.key('position'), { amount: '2000000', cost: '10000000' });
+  f.engine.setPaperBalance('2.123456789');
+  assert.equal(f.store.get(f.engine.paperKey()).SOL, '2123456789');
+  assert.equal(f.store.get(f.engine.paperKey()).USDC, '2000000');
+  assert.equal(f.engine.position().amount, '2000000');
+  assert.equal(snapshot(f.engine).paperStartingBalance, '2.123456789');
+  for (const amount of ['-1', '1e3', '0.0000000001', '', '18446744074', null, 2])
+    assert.throws(() => f.engine.setPaperBalance(amount));
+  f.engine.start(); assert.throws(() => f.engine.setPaperBalance('3'), /Stop the bot/);
+  f.engine.stop(); f.engine.busy = true; assert.throws(() => f.engine.setPaperBalance('3'), /Stop the bot/);
+  f.engine.busy = false;
+  const restarted = new Engine(makeConfig({}, false), f.store, f.provider);
+  restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '2123456789');
+  restarted.setPaperBalance('0'); restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '0');
+  restarted.cfg.mode = 'live'; assert.throws(() => restarted.setPaperBalance('4'), /Live balances/);
+});
+
+test('paper balance endpoint requires owner authentication and same origin', async t => {
+  const f = fixture(t, { TRADING_PAIR: 'USDC_SOL' }), token = '123:secret', owner = '456';
+  const server = appServer(f.engine, { token, owner });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/api/paper/balance`, body = JSON.stringify({amount:'3.5'});
+  assert.equal((await fetch(url, {method:'POST',body})).status,401);
+  const headers = {Authorization:'tma '+signedAuth(token,owner),'Content-Type':'application/json'};
+  assert.equal((await fetch(url,{method:'POST',body,headers:{...headers,Origin:'https://wrong.example'}})).status,403);
+  const response=await fetch(url,{method:'POST',body,headers}); assert.equal(response.status,200);
+  assert.equal((await response.json()).paperStartingBalance,'3.5'); assert.equal((await f.engine.balances()).SOL,'3500000000');
+});
+
 const mint = 'DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R';
 function fixture(t, env = {}) {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3', ...env }, false);
