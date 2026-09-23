@@ -13,7 +13,13 @@ export async function jsonRequest(url, options = {}, timeout = 15000) {
 
 export class Jupiter {
   constructor(cfg, request = jsonRequest) { this.cfg = cfg; this.request = request; this.lastRequest = 0; }
-  async quote(input, output, amount, taker) {
+  quote(...args) {
+    // Price polling and strategy requests share the provider's request spacing.
+    const request = (this.quoteQueue || Promise.resolve()).then(() => this.fetchQuote(...args));
+    this.quoteQueue = request.catch(() => {});
+    return request;
+  }
+  async fetchQuote(input, output, amount, taker) {
     // Public/keyless tier is 0.5 requests per second. Commands are processed serially.
     const delay = (this.cfg.apiKey ? 150 : 2100) - (Date.now() - this.lastRequest);
     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
