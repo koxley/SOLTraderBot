@@ -51,13 +51,16 @@ export class Engine {
     this.generation = 0;
     this.closing = false;
     this.defaultStrategy = strategySettings(cfg);
-    // Restart in recovery mode when real exposure exists, even if the startup default is paper.
-    if (store.get('SOL_USDC:live:position') || store.get('live:position') || store.orders().some(o => o.mode === 'live' && unresolved.has(o.status))) cfg.mode = 'live';
-    if (cfg.pair === 'SOL_USDC' && (store.get('live:position') || store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') === 'DOGE_SOL' && unresolved.has(o.status))))
-      throw new Error('Close or reconcile the legacy DOGE position before switching to SOL/USDC.');
-    if (cfg.pair === 'SOL_USDC' && !store.get('paper:SOL_USDC')) store.set('paper:SOL_USDC', cfg.paper);
-    const marketKey = cfg.pair === 'SOL_USDC' ? 'market:SOL_USDC' : 'market';
-    const market = cfg.pair === 'DOGE_SOL' ? `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}` : `${cfg.tokens.SOL.mint}:${cfg.tokens.USDC.mint}`;
+    // Never interpret a position from a different trading direction as this market.
+    const otherPairs = ['DOGE_SOL', 'SOL_USDC', 'USDC_SOL'].filter(pair => pair !== cfg.pair);
+    if (otherPairs.some(pair => store.get(`${pair === 'DOGE_SOL' ? '' : pair + ':'}live:position`)) ||
+        store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') !== cfg.pair && unresolved.has(o.status)))
+      throw new Error('Close or reconcile the legacy DOGE or other market live position before changing trading direction.');
+    if (store.get(`${cfg.pair === 'DOGE_SOL' ? '' : cfg.pair + ':'}live:position`) ||
+        store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') === cfg.pair && unresolved.has(o.status))) cfg.mode = 'live';
+    if (!store.get(this.paperKey())) store.set(this.paperKey(), cfg.paper);
+    const marketKey = cfg.pair === 'DOGE_SOL' ? 'market' : `market:${cfg.pair}`;
+    const market = cfg.pair === 'DOGE_SOL' ? `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}` : `${cfg.tokens[cfg.base].mint}:${cfg.tokens[cfg.quote].mint}`;
     const existingMarket = this.store.get(marketKey);
     if (existingMarket && existingMarket !== market) throw new Error('Token configuration changed. Use a separate DATA_DIR for a different token.');
     this.store.set(marketKey, market);
@@ -78,8 +81,8 @@ export class Engine {
     });
     Object.assign(this.cfg, next);
   }
-  key(name) { return `${this.cfg.pair === 'SOL_USDC' ? 'SOL_USDC:' : ''}${this.cfg.mode}:${name}`; }
-  paperKey() { return this.cfg.pair === 'SOL_USDC' ? 'paper:SOL_USDC' : 'paper'; }
+  key(name) { return `${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${this.cfg.mode}:${name}`; }
+  paperKey() { return this.cfg.pair === 'DOGE_SOL' ? 'paper' : `paper:${this.cfg.pair}`; }
   orders() { return this.store.orders().filter(o => (o.pair || 'DOGE_SOL') === this.cfg.pair); }
   switchMode(mode, acknowledged = false) {
     if (!['paper', 'live'].includes(mode)) throw new UserError('Choose paper or live mode.');
@@ -90,7 +93,7 @@ export class Engine {
       throw new UserError('Close your live position before switching to paper mode.');
     if (mode === 'live' && (!acknowledged || !this.wallet))
       throw new UserError('Unlock your wallet and acknowledge real-fund trading before selecting live.');
-    const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'SOL_USDC' ? 'SOL_USDC:' : ''}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair);
+    const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair);
     if (mode === 'live') this.bindWallet(this.wallet.address);
     this.stop();
     Object.assign(this.cfg, settings, { mode });

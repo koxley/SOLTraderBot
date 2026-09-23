@@ -49,10 +49,10 @@ export class Wallet {
   async balances() {
     const [sol, tokens] = await Promise.all([
       this.connection.getBalance(this.signer.publicKey),
-      this.cfg.pairReady ? this.connection.getParsedTokenAccountsByOwner(this.signer.publicKey, { mint: new PublicKey(this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint) }) : Promise.resolve({ value: [] }),
+      this.cfg.pairReady ? this.connection.getParsedTokenAccountsByOwner(this.signer.publicKey, { mint: new PublicKey(this.cfg.tokens[this.cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC'].mint) }) : Promise.resolve({ value: [] }),
     ]);
     if (!Number.isSafeInteger(sol)) throw new UserError('SOL balance exceeds safe RPC integer range.');
-    return { SOL: String(sol), [this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE']: tokens.value.reduce((sum, t) => sum + BigInt(t.account.data.parsed.info.tokenAmount.amount), 0n).toString() };
+    return { SOL: String(sol), [this.cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC']: tokens.value.reduce((sum, t) => sum + BigInt(t.account.data.parsed.info.tokenAmount.amount), 0n).toString() };
   }
   async prepare(quote) {
     const tx = VersionedTransaction.deserialize(Buffer.from(quote.transaction, 'base64'));
@@ -60,7 +60,7 @@ export class Wallet {
       throw new UserError('Unexpected fee payer or additional signer; refusing transaction.');
     if (!(await this.connection.isBlockhashValid(tx.message.recentBlockhash)).value)
       throw new UserError('Transaction expired; request a new quote.');
-    const mint = new PublicKey(this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint);
+    const mint = new PublicKey(this.cfg.tokens[this.cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC'].mint);
     const tokenProgram = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
     const [ata] = PublicKey.findProgramAddressSync([this.signer.publicKey.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'));
@@ -96,7 +96,7 @@ export class Wallet {
     const tx = await this.connection.getTransaction(order.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
     if (!tx?.meta || tx.meta.err) return null;
     const meta = tx.meta;
-    const tokenTotal = list => (list || []).filter(b => b.owner === this.address && b.mint === this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint)
+    const tokenTotal = list => (list || []).filter(b => b.owner === this.address && b.mint === this.cfg.tokens[this.cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC'].mint)
       .reduce((sum, b) => sum + BigInt(b.uiTokenAmount.amount), 0n);
     const dogeDelta = tokenTotal(meta.postTokenBalances) - tokenTotal(meta.preTokenBalances);
     if (![meta.postBalances[0], meta.preBalances[0], meta.fee].every(Number.isSafeInteger)) return null;
@@ -113,10 +113,10 @@ export async function verifyMint(cfg) {
   if (!cfg.pairReady) return;
   const connection = new Connection(cfg.rpc, { commitment: 'confirmed', disableRetryOnRateLimit: true,
     fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(15000) }) });
-  const result = await connection.getParsedAccountInfo(new PublicKey(cfg.tokens[cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint));
+  const result = await connection.getParsedAccountInfo(new PublicKey(cfg.tokens[cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC'].mint));
   const account = result.value;
   // Keep this implementation scoped to classic SPL tokens; transfer-fee extensions need extra accounting.
   if (!account || account.owner.toBase58() !== 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
-      account.data.parsed?.type !== 'mint' || account.data.parsed.info.decimals !== cfg.tokens[cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].decimals)
+      account.data.parsed?.type !== 'mint' || account.data.parsed.info.decimals !== cfg.tokens[cfg.pair === 'DOGE_SOL' ? 'DOGE' : 'USDC'].decimals)
     throw new Error('Trading token mint is not a classic SPL mint with the configured decimals.');
 }

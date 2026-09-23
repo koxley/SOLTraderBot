@@ -7,7 +7,7 @@ export function strategySettings(cfg) {
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals), maxDaily: format(cfg.maxDaily, cfg.quoteDecimals) };
 }
 
-export function validateStrategy(input, pair = 'SOL_USDC') {
+export function validateStrategy(input, pair = 'USDC_SOL') {
   const keys = ['fast', 'slow', 'interval', 'size', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== keys.length ||
       keys.some(k => !Object.hasOwn(input, k) || !['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))
@@ -19,8 +19,8 @@ export function validateStrategy(input, pair = 'SOL_USDC') {
   };
   try {
     const cfg = config({ TRADING_PAIR: pair, EMA_FAST: String(input.fast), EMA_SLOW: String(input.slow), SAMPLE_SECONDS: String(input.interval),
-      [pair === 'DOGE_SOL' ? 'TRADE_SIZE_SOL' : 'TRADE_SIZE_USDC']: String(input.size), STOP_LOSS_BPS: bps(input.stopLoss), TAKE_PROFIT_BPS: bps(input.takeProfit),
-      SLIPPAGE_BPS: bps(input.slippage), [pair === 'DOGE_SOL' ? 'MAX_TRADE_SOL' : 'MAX_TRADE_USDC']: String(input.maxTrade), [pair === 'DOGE_SOL' ? 'MAX_DAILY_SOL' : 'MAX_DAILY_USDC']: String(input.maxDaily) }, false);
+      [pair === 'SOL_USDC' ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL']: String(input.size), STOP_LOSS_BPS: bps(input.stopLoss), TAKE_PROFIT_BPS: bps(input.takeProfit),
+      SLIPPAGE_BPS: bps(input.slippage), [pair === 'SOL_USDC' ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL']: String(input.maxTrade), [pair === 'SOL_USDC' ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL']: String(input.maxDaily) }, false);
     if (BigInt(cfg.tradeSize) > BigInt(cfg.maxTrade) || BigInt(cfg.maxTrade) > BigInt(cfg.maxDaily))
       throw new UserError('Trade size must be ≤ maximum entry ≤ daily limit.');
     return { quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
