@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { UserError, format } from './config.js';
 import { strategySettings } from './strategy.js';
+import { validateQuote } from './engine.js';
 
 async function readSettings(req) {
   let size = 0; const parts = [];
@@ -36,19 +37,21 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
   const samples = engine.store.get(engine.key('samples')) || [];
+  const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
   const last = samples.at(-1);
   return { base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
     price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
-    samples: samples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
+    chartInterval: 15,
+    samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
     warmup: Math.min(samples.length, cfg.slow + 1), warmupRequired: cfg.slow + 1,
     position: p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),
-    chartTrades: orders.filter(o => o.status === 'filled' && samples.length && o.time >= samples[0].time)
+    chartTrades: orders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)
       .map(o => ({ time: o.time, side: o.side, status: o.status })),
     paperStartingBalance: format(engine.store.get(engine.key('startingBalance')) ?? (10n ** BigInt(cfg.quoteDecimals)).toString(), cfg.quoteDecimals),
     tradeCount: orders.length,
@@ -58,9 +61,30 @@ export function snapshot(engine) {
   };
 }
 
-export function appServer(engine, { token, owner, demo = false, publicUrl = '', vault = null }) {
+export function appServer(engine, { token, owner, demo = false, publicUrl = '', vault = null, clock = Date.now }) {
   const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
   let lastAction = 0, walletBusy = false;
+  let priceRequest = null, lastPrice = null;
+  async function marketPrice() {
+    if (priceRequest) return priceRequest;
+    if (lastPrice && clock() - lastPrice.time < 4500) return lastPrice;
+    priceRequest = (async () => {
+      const cfg = engine.cfg, chartKey = engine.key('chartSamples');
+      const amount = (10n ** BigInt(cfg.tokens[cfg.base].decimals)).toString();
+      const q = validateQuote(await engine.jupiter.quote(cfg.base, cfg.quote, amount), cfg.base, cfg.quote, amount, cfg);
+      const now = clock();
+      lastPrice = { price: Number(q.outAmount) / 10 ** cfg.quoteDecimals, time: now };
+      const chart = engine.store.get(chartKey) || [];
+      // Display sampling is independent of trading, EMA warm-up and strategy intervals.
+      const bucket = Math.floor(now / 15000) * 15000;
+      if (!chart.length || bucket > chart.at(-1).time) {
+        chart.push({ time: bucket, price: q.outAmount });
+        engine.store.set(chartKey, chart.slice(-600));
+      }
+      return lastPrice;
+    })();
+    try { return await priceRequest; } finally { priceRequest = null; }
+  }
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -78,6 +102,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       if (!path.startsWith('/api/')) return reply(404, { error: 'Not found' });
       if (!demo && !authenticate(req.headers.authorization?.replace(/^tma /, ''), token, owner))
         return reply(401, { error: 'Open this app from your bot in Telegram. Session expires after one hour; reopen to refresh.' });
+      if (req.method === 'GET' && path === '/api/price') return reply(200, await marketPrice());
       if (req.method === 'GET' && path === '/api/state') return reply(200, { ...snapshot(engine), demo });
       if (req.method === 'GET' && path === '/api/balance') return reply(200, await engine.balances());
       if (req.method === 'GET' && path === '/api/wallet') {
