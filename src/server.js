@@ -36,7 +36,7 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
   const samples = engine.store.get(engine.key('samples')) || [];
-  const orders = engine.store.orders().filter(o => o.mode === cfg.mode);
+  const orders = engine.store.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
   const realized = orders.filter(o => o.realizedSOL).reduce((n, o) => n + BigInt(o.realizedSOL), 0n);
   const last = samples.at(-1);
   return { mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
@@ -48,7 +48,8 @@ export function snapshot(engine) {
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens.DOGE.decimals))) / 1e9 : null } : null,
     realized: Number(realized) / 1e9,
     strategy: strategySettings(cfg),
-    trades: orders.slice(0, 30).map(o => ({ id: o.id, side: o.side, reason: o.reason, status: o.status,
+    tradeCount: orders.length,
+    trades: orders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
       time: o.time, input: o.input, output: o.output, amount: format(o.actualInput || o.amount, cfg.tokens[o.input].decimals),
       received: o.actualOutput ? format(o.actualOutput, cfg.tokens[o.output].decimals) : null, signature: o.signature })),
   };
