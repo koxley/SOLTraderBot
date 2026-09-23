@@ -332,3 +332,24 @@ test('unlock endpoint requires owner and origin, clears supplied key, and report
   assert.equal(response.status, 200); assert.equal(calls, 1);
   assert.equal((await response.text()).includes('a'.repeat(64)), false);
 });
+
+
+test('Telegram optional setup rate limits do not abort startup; webhook checks still block', async t => {
+  const f = fixture(t), bot = new Telegram(f.cfg, f.engine, 'https://bot.example');
+  const calls = [];
+  bot.api = async method => { calls.push(method); if (method === 'getWebhookInfo') return { url: '' }; throw new Error('Service returned HTTP 429'); };
+  await bot.setup();
+  assert.ok(calls.includes('setMyName')); assert.ok(calls.includes('setChatMenuButton')); assert.ok(calls.includes('sendMessage'));
+  bot.api = async () => ({ url: 'https://existing.example/webhook' });
+  await assert.rejects(bot.setup(), /webhook/);
+  bot.api = async () => { throw new Error('unauthorized'); };
+  await assert.rejects(bot.setup(), /unauthorized/);
+});
+
+test('wallet mainnet verification accepts full genesis hash and rejects other networks', async () => {
+  const wallet = new Wallet(config({}, false), Keypair.generate());
+  wallet.connection = { getGenesisHash: async () => '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d' };
+  await wallet.verifyNetwork();
+  wallet.connection.getGenesisHash = async () => 'devnet';
+  await assert.rejects(wallet.verifyNetwork(), /mainnet/);
+});
