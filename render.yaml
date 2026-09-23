@@ -10,7 +10,6 @@ services:
     buildCommand: npx --yes pnpm@11.19.0 install --frozen-lockfile --prod
     startCommand: node src/main.js
     healthCheckPath: /healthz
-    maxShutdownDelaySeconds: 90
     domains:
       - soltraderbot.com
     disk:
