@@ -43,7 +43,7 @@ export class Wallet {
       fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(15000) }) });
   }
   async verifyNetwork() {
-    if (await this.connection.getGenesisHash() !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp')
+    if (await this.connection.getGenesisHash() !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d')
       throw new Error('Live swaps require a Solana mainnet RPC.');
   }
   async balances() {

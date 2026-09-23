@@ -14,18 +14,19 @@ export class Telegram {
   async setup() {
     const hook = await this.api('getWebhookInfo', {});
     if (hook.url) throw new Error('This bot has a webhook. Remove it before using polling.');
-    await this.api('setMyName', { name: 'SOL TRADER' });
-    await this.api('setMyCommands', { commands: [
+    const optional = async action => { try { await action(); } catch { console.warn('Telegram profile/menu update or startup notification deferred. Bot commands remain available.'); } };
+    await optional(() => this.api('setMyName', { name: 'SOL TRADER' }));
+    await optional(() => this.api('setMyCommands', { commands: [
       ['app', 'Open trading dashboard'], ['start', 'Start automatic trading'], ['stop', 'Stop trading; keep position'],
       ['close', 'Stop and sell the bot position'], ['status', 'Strategy status'], ['balance', 'Wallet balances'],
       ['history', 'Recent trades'], ['reconcile', 'Check unsettled trades'], ['help', 'Help'],
-    ].map(([command, description]) => ({ command, description })) });
-    if (this.publicUrl) await this.api('setChatMenuButton', { chat_id: this.cfg.owner,
-      menu_button: { type: 'web_app', text: 'Open SOL TRADER', web_app: { url: this.publicUrl } } });
-    await this.send(`SOL TRADER is online in ${this.cfg.mode.toUpperCase()} mode and STOPPED. Use /app or /start.`, {
+    ].map(([command, description]) => ({ command, description })) }));
+    if (this.publicUrl) await optional(() => this.api('setChatMenuButton', { chat_id: this.cfg.owner,
+      menu_button: { type: 'web_app', text: 'Open SOL TRADER', web_app: { url: this.publicUrl } } }));
+    await optional(() => this.send(`SOL TRADER is online in ${this.cfg.mode.toUpperCase()} mode and STOPPED. Use /app or /start.`, {
       reply_markup: { keyboard: [[{ text: 'Start' }, { text: 'Stop' }], [{ text: 'Close Open Positions' }],
         ...(this.publicUrl ? [[{ text: 'Open SOL TRADER', web_app: { url: this.publicUrl } }]] : [])], resize_keyboard: true },
-    });
+    }));
   }
   async handle(update) {
     const msg = update.message;
