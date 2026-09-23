@@ -161,14 +161,19 @@ test('database transaction rolls back failed fill bookkeeping', t => {
 test('encrypted wallet round-trip, no overwrite, wrong key and tampering rejected', t => {
   const dir = mkdtempSync(join(tmpdir(), 'sol-pilot-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const cfg = config({ DATA_DIR: dir, WALLET_ENCRYPTION_KEY: randomBytes(32).toString('hex') }, false);
-  const vault = new Vault(cfg), wallet = vault.create();
-  assert.equal(vault.load().address, wallet.address); assert.throws(() => vault.create(), /already exists/);
+  const secret = randomBytes(32).toString('hex');
+  const cfg = config({ DATA_DIR: dir, WALLET_ENCRYPTION_KEY: secret }, false);
+  assert.equal(cfg.encryptionKey, '');
+  const vault = new Vault(cfg), wallet = vault.withKey(secret, true);
+  assert.equal(cfg.encryptionKey, "");
+  assert.equal(vault.withKey(secret).address, wallet.address); assert.throws(() => vault.withKey(secret, true), /already exists/);
+  assert.throws(() => vault.withKey(randomBytes(32).toString("hex")), /Could not unlock/);
+  assert.equal(cfg.encryptionKey, "");
   const raw = readFileSync(vault.path, 'utf8'); assert.ok(!raw.includes(JSON.stringify(Array.from(wallet.signer.secretKey))));
   assert.throws(() => new Vault({ ...cfg, encryptionKey: randomBytes(32).toString('hex') }).load());
   const payload = JSON.parse(raw); payload.ciphertext = '00' + payload.ciphertext.slice(2);
   if (JSON.parse(raw).ciphertext === payload.ciphertext) payload.ciphertext = 'ff' + payload.ciphertext.slice(2);
-  writeFileSync(vault.path, JSON.stringify(payload)); assert.throws(() => vault.load());
+  writeFileSync(vault.path, JSON.stringify(payload)); assert.throws(() => vault.withKey(secret));
 });
 function signedAuth(token, owner, date = Math.floor(Date.now() / 1000)) {
   const p = new URLSearchParams({ auth_date: String(date), query_id: 'test', user: JSON.stringify({ id: Number(owner) }) });
@@ -258,14 +263,72 @@ test('SQLite reopens with the same balances and position on disk', t => {
 test('HTTP wallet creation and deposit QR never expose private material', async t => {
   const f = fixture(t), token = '123:secret', owner = '456';
   const signer = Keypair.generate();
-  const server = appServer(f.engine, { token, owner, vault: { create: () => ({ address: signer.publicKey.toBase58(),
+  const server = appServer(f.engine, { token, owner, vault: { withKey: () => ({ verifyNetwork: async () => {}, address: signer.publicKey.toBase58(),
     signer, balances: async () => ({ SOL: '123000000', DOGE: '0' }) }) } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`, headers = { Authorization: 'tma ' + signedAuth(token, owner) };
-  assert.equal((await fetch(base + '/api/wallet/create', { method: 'POST', headers })).status, 200);
+  assert.equal((await fetch(base + '/api/wallet/create', { method: 'POST', headers, body: JSON.stringify({ key: 'a'.repeat(64) }) })).status, 200);
   const body = await (await fetch(base + '/api/wallet', { headers })).json();
   assert.equal(body.address, signer.publicKey.toBase58()); assert.equal(body.balance.SOL, '123000000');
   assert.equal(body.uri, 'solana:' + body.address); assert.match(body.qr, /^data:image\/png;base64,/);
   assert.equal(JSON.stringify(body).includes('secretKey'), false); assert.equal(body.signer, undefined);
+});
+
+
+test('mode changes isolate strategies and balances and never start trading', t => {
+  const f = fixture(t), paper = f.store.get('paper'); f.engine.wallet = f.wallet;
+  f.engine.configure({ ...strategySettings(f.cfg), size: '0.04' });
+  assert.throws(() => f.engine.switchMode('live'), /acknowledge/);
+  f.engine.start(); assert.throws(() => f.engine.switchMode('live', true), /Stop/); f.engine.stop();
+  f.engine.switchMode('live', true);
+  assert.equal(f.cfg.mode, 'live'); assert.equal(f.cfg.tradeSize, '25000000'); assert.equal(f.engine.active(), false);
+  f.engine.configure({ ...strategySettings(f.cfg), size: '0.05' });
+  f.engine.switchMode('paper'); assert.equal(f.cfg.tradeSize, '40000000'); assert.deepEqual(f.store.get('paper'), paper);
+  f.engine.switchMode('live', true); assert.equal(f.cfg.tradeSize, '50000000');
+  f.store.set('live:position', { amount: '1', cost: '1' });
+  assert.throws(() => f.engine.switchMode('paper'), /Close your live/);
+});
+
+test('restart exposes real positions and unknown trades for unlock and recovery', async t => {
+  const f = fixture(t);
+  f.store.put({ id: 'pending-live', mode: 'live', status: 'unknown', signature: 'sig' });
+  const restarted = new Engine(config({ DOGE_MINT: mint }, false), f.store, f.provider);
+  assert.equal(restarted.cfg.mode, 'live'); assert.equal(restarted.pending().length, 1);
+  assert.equal(restarted.active(), false);
+  assert.throws(() => restarted.switchMode('paper'), /reconcile/);
+  await assert.rejects(restarted.reconcile(), /Unlock/);
+});
+
+test('wallet address survives balance outages and mode API requires authentication', async t => {
+  const f = fixture(t), token = '123:secret', owner = '456';
+  f.engine.wallet = f.wallet;
+  f.wallet.balances = async () => { throw new Error('private rpc detail'); };
+  const server = appServer(f.engine, { token, owner });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`, headers = { Authorization: 'tma ' + signedAuth(token, owner) };
+  const data = await (await fetch(base + '/api/wallet', { headers })).json();
+  assert.equal(data.address, f.wallet.address); assert.equal(data.balance, null); assert.ok(data.qr);
+  assert.equal((await fetch(base + '/api/mode', { method: 'POST', body: JSON.stringify({ mode: 'live', acknowledged: true }) })).status, 401);
+  const result = await fetch(base + '/api/mode', { method: 'POST', headers, body: JSON.stringify({ mode: 'live', acknowledged: true }) });
+  assert.equal(result.status, 200); assert.equal((await result.json()).mode, 'live'); assert.equal(f.engine.active(), false);
+});
+
+test('unlock endpoint requires owner and origin, clears supplied key, and reports locked wallets', async t => {
+  const f = fixture(t), token = '123:secret', owner = '456'; f.engine.wallet = null;
+  let calls = 0;
+  const vault = { exists: () => true, withKey: key => { calls++; assert.equal(key, 'a'.repeat(64)); return { address: f.wallet.address, verifyNetwork: async () => {}, balances: f.wallet.balances }; } };
+  const server = appServer(f.engine, { token, owner, vault, publicUrl: 'https://bot.example' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`, headers = { Authorization: 'tma ' + signedAuth(token, owner) };
+  assert.equal((await (await fetch(base + '/api/wallet', { headers })).json()).locked, true);
+  const body = JSON.stringify({ key: 'a'.repeat(64) });
+  assert.equal((await fetch(base + '/api/wallet/unlock', { method: 'POST', body })).status, 401);
+  assert.equal((await fetch(base + '/api/wallet/unlock', { method: 'POST', body, headers: { ...headers, Origin: 'https://evil.example' } })).status, 403);
+  assert.equal(calls, 0);
+  const response = await fetch(base + '/api/wallet/unlock', { method: 'POST', body, headers });
+  assert.equal(response.status, 200); assert.equal(calls, 1);
+  assert.equal((await response.text()).includes('a'.repeat(64)), false);
 });
