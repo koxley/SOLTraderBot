@@ -40,7 +40,7 @@ export function snapshot(engine) {
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
   const last = samples.at(-1);
   return { base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
-    wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, pending: engine.pending().length,
+    wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
     price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
     samples: samples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
     warmup: Math.min(samples.length, cfg.slow + 1), warmupRequired: cfg.slow + 1,
@@ -107,7 +107,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
           case '/api/wallet/unlock':
           case '/api/wallet/create': {
             if (demo) {
-              engine.wallet ||= { address: 'Preview wallet', balances: async () => ({ SOL: '0', USDC: '0', DOGE: '0' }) };
+              engine.wallet ||= { address: 'Preview wallet', balances: async () => ({ SOL: '0', USDC: '0', DOGE: '0', cbBTC: '0' }) };
               return reply(200, { message: 'Preview wallet created. Deposits are disabled in the demo.' });
             }
             if (!vault) throw new UserError('Wallet service unavailable.');

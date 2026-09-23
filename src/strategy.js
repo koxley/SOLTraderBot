@@ -7,7 +7,7 @@ export function strategySettings(cfg) {
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals), maxDaily: format(cfg.maxDaily, cfg.quoteDecimals) };
 }
 
-export function validateStrategy(input, pair = 'USDC_SOL') {
+export function validateStrategy(input, pair = 'CBBTC_SOL') {
   const keys = ['fast', 'slow', 'interval', 'size', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== keys.length ||
       keys.some(k => !Object.hasOwn(input, k) || !['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))

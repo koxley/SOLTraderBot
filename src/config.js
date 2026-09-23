@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 export const TOKENS = Object.freeze({
+  cbBTC: { mint: 'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij', decimals: 8 },
   USDC: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6 },
   SOL: { mint: 'So11111111111111111111111111111111111111112', decimals: 9 },
 });
@@ -24,9 +25,11 @@ export function format(value, decimals) {
 }
 
 export function config(env = process.env, requireTelegram = true) {
-  const legacy = env.TRADING_PAIR === 'DOGE_SOL';
+  const pair = env.TRADING_PAIR || 'CBBTC_SOL';
+  if (!['DOGE_SOL', 'SOL_USDC', 'USDC_SOL', 'CBBTC_SOL'].includes(pair)) throw new Error('Unsupported TRADING_PAIR.');
+  const legacy = pair === 'DOGE_SOL';
   const inverse = env.TRADING_PAIR === 'SOL_USDC';
-  const base = legacy ? 'DOGE' : inverse ? 'SOL' : 'USDC', quote = inverse ? 'USDC' : 'SOL';
+  const base = legacy ? 'DOGE' : inverse ? 'SOL' : pair === 'USDC_SOL' ? 'USDC' : 'cbBTC', quote = inverse ? 'USDC' : 'SOL';
   const quoteDecimals = inverse ? 6 : 9;
   const mode = env.TRADING_MODE || 'paper';
   if (!['paper', 'live'].includes(mode)) throw new Error('TRADING_MODE must be paper or live.');
@@ -54,7 +57,7 @@ export function config(env = process.env, requireTelegram = true) {
   if (dogeMint && (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(dogeMint) || dogeMint === TOKENS.SOL.mint))
     throw new Error('DOGE_MINT must be the verified wrapped DOGE mint on Solana.');
   return {
-    base, quote, quoteDecimals, pair: legacy ? 'DOGE_SOL' : inverse ? 'SOL_USDC' : 'USDC_SOL',
+    base, quote, quoteDecimals, pair, splToken: base === 'SOL' ? quote : base,
     mode, token: env.TELEGRAM_BOT_TOKEN, owner: env.TELEGRAM_OWNER_ID,
     apiKey: env.JUPITER_API_KEY || '', rpc, keyPath: env.WALLET_KEYPAIR_PATH,
     dataDir: resolve(env.DATA_DIR || './data'),
@@ -65,7 +68,7 @@ export function config(env = process.env, requireTelegram = true) {
     encryptionKey: '', // Supplied by the authenticated owner at wallet unlock, never from .env.
     maxTrade: amount(inverse ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL', inverse ? '1' : '0.1', quoteDecimals), maxDaily: amount(inverse ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL', inverse ? '5' : '0.5', quoteDecimals),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),
-    paper: { USDC: units(env.PAPER_USDC ?? (inverse ? '1' : '0'), 6).toString(), DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
+    paper: { cbBTC: units(env.PAPER_CBBTC ?? '0', 8).toString(), USDC: units(env.PAPER_USDC ?? (inverse ? '1' : '0'), 6).toString(), DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
     tradeSize: amount(inverse ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL', inverse ? '0.25' : '0.025', quoteDecimals),
     sampleMs: integer('SAMPLE_SECONDS', 60, 15, 3600) * 1000,
     fast, slow,

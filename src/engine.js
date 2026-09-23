@@ -52,12 +52,19 @@ export class Engine {
     this.closing = false;
     this.defaultStrategy = strategySettings(cfg);
     // Never interpret a position from a different trading direction as this market.
-    const otherPairs = ['DOGE_SOL', 'SOL_USDC', 'USDC_SOL'].filter(pair => pair !== cfg.pair);
+    const otherPairs = ['DOGE_SOL', 'SOL_USDC', 'USDC_SOL', 'CBBTC_SOL'].filter(pair => pair !== cfg.pair);
     if (otherPairs.some(pair => store.get(`${pair === 'DOGE_SOL' ? '' : pair + ':'}live:position`)) ||
         store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') !== cfg.pair && unresolved.has(o.status)))
       throw new Error('Close or reconcile the legacy DOGE or other market live position before changing trading direction.');
     if (store.get(`${cfg.pair === 'DOGE_SOL' ? '' : cfg.pair + ':'}live:position`) ||
         store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') === cfg.pair && unresolved.has(o.status))) cfg.mode = 'live';
+    // SOL-denominated user settings carry forward; holdings and trade history do not.
+    if (cfg.pair === 'CBBTC_SOL') {
+      for (const mode of ['paper', 'live']) for (const name of ['strategy', 'startingBalance']) {
+        const target = `CBBTC_SOL:${mode}:${name}`, previous = store.get(`USDC_SOL:${mode}:${name}`);
+        if (store.get(target) === undefined && previous !== undefined) store.set(target, previous);
+      }
+    }
     if (!store.get(this.paperKey())) store.set(this.paperKey(), cfg.paper);
     const marketKey = cfg.pair === 'DOGE_SOL' ? 'market' : `market:${cfg.pair}`;
     const market = cfg.pair === 'DOGE_SOL' ? `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}` : `${cfg.tokens[cfg.base].mint}:${cfg.tokens[cfg.quote].mint}`;
@@ -135,7 +142,7 @@ export class Engine {
   stop() { this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false); }
   requestClose() { this.stop(); this.closing = true; }
   active() { return !this.stopping && this.store.get('running') === true; }
-  async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', USDC: '0', DOGE: '0' }; }
+  async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', USDC: '0', DOGE: '0', cbBTC: '0' }; }
   budget(notional) {
     if (notional > BigInt(this.cfg.maxTrade)) throw new UserError('Per-trade limit exceeded. Adjust limits before restarting.');
     const day = new Date(this.now()).toISOString().slice(0, 10);
