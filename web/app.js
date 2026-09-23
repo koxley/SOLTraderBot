@@ -5,6 +5,7 @@ let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
 let recentSince = Date.now();
 let savingBalance = false;
+let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
   for (const [key, value] of Object.entries(settings)) $(`setting-${key}`).value = value;
 }
@@ -26,8 +27,7 @@ function render(s) {
   text('mode', s.mode.toUpperCase() + ' MODE');
   $('trading-mode').value = s.mode;
   $('trading-mode').disabled = actionBusy || s.running || s.busy || s.closing || !!s.pending;
-  $('price').replaceChildren(document.createTextNode(s.price === null ? '— ' : number(s.price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: s.quote || 'SOL' }));
-  text('sample-label', s.running ? 'Monitoring market' : 'Last observed quote');
+  renderPrice();
   text('realized', (s.realized > 0 ? '+' : '') + number(s.realized, 6));
   $('realized').className = s.realized > 0 ? 'green' : s.realized < 0 ? 'red' : '';
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
@@ -43,7 +43,7 @@ function render(s) {
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
   text('position-tag', s.position ? '1 OPEN' : 'NO POSITION');
   if (s.position) { text('position-amount', number(s.position.amount, 8)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
-  text('ema', `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.strategy.interval);
+  text('ema', `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
   text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
   text('mint-label', 'cbBTC mint: ' + s.tokenMint);
@@ -140,6 +140,18 @@ function drawChart(samples) {
   }
   canvas.setAttribute('aria-label', `Observed cbBTC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? levelText + ". " : ""}Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
+}
+function renderPrice() {
+  const price = livePrice?.price ?? state?.price ?? null;
+  $('price').replaceChildren(document.createTextNode(price === null ? '— ' : number(price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: state?.quote || 'SOL' }));
+  text('sample-label', priceFailed ? 'Price refresh failed · retrying' : livePrice ? 'Live price · 5s refresh' : 'Fetching live price');
+}
+async function refreshPrice() {
+  if (priceBusy) return;
+  priceBusy = true;
+  try { livePrice = await api('price'); priceFailed = false; }
+  catch { priceFailed = true; }
+  finally { priceBusy = false; renderPrice(); }
 }
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
@@ -252,6 +264,8 @@ async function openApp() {
   try { await api('paper/reset-balance', 'POST'); } catch (error) { toast(error.message); }
   await refresh(); await balances();
 }
-openApp();
+openApp(); refreshPrice();
+setInterval(() => { if (!document.hidden) refreshPrice(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPrice(); });
 setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 setInterval(() => { if (!document.hidden) { balances(); if (activeView === 'wallet-view') wallet(); } }, 15000);
