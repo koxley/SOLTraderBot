@@ -33,7 +33,7 @@ function render(s) {
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
   text('status-pill', s.closing ? 'Closing' : s.running ? 'Running' : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
-  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? 'Selling the bot’s USDC position back to SOL. Trading will stay stopped.' : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
+  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? 'Selling the bot’s cbBTC position back to SOL. Trading will stay stopped.' : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
   text('warmup-text', `${s.warmup} / ${s.warmupRequired} samples`);
   $('warmup-progress').max = s.warmupRequired; $('warmup-progress').value = s.warmup;
   $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || !s.pairReady || (s.mode === 'live' && !s.wallet);
@@ -42,11 +42,11 @@ function render(s) {
   $('reconcile').hidden = !s.pending;
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
   text('position-tag', s.position ? '1 OPEN' : 'NO POSITION');
-  if (s.position) { text('position-amount', number(s.position.amount, 4)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
+  if (s.position) { text('position-amount', number(s.position.amount, 8)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
   text('ema', `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.strategy.interval);
   text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
-  text('mint-label', 'USDC mint: ' + s.usdcMint);
+  text('mint-label', 'cbBTC mint: ' + s.tokenMint);
   text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
   text('dashboard-trade-count', s.mode.toUpperCase());
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
@@ -74,7 +74,7 @@ function renderTrades(trades, target) {
     const row = document.createElement('div'); row.className = 'trade-item';
     const icon = document.createElement('div'); icon.className = 'trade-icon ' + trade.side; icon.textContent = trade.side === 'buy' ? '↗' : '↙';
     const info = document.createElement('div'); info.className = 'trade-info';
-    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought USDC' : 'Sold USDC';
+    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought cbBTC' : 'Sold cbBTC';
     if (trade.status !== 'filled') title.textContent = (trade.side === 'buy' ? 'Buy' : 'Sell') + ' · ' + trade.status;
     const status = document.createElement('small'); status.className = 'transaction-status';
     const labels = { filled: 'Completed', submitting: 'Submitting', unknown: 'Needs reconciliation', failed: 'Failed', expired: 'Expired' };
@@ -104,7 +104,7 @@ function drawChart(samples) {
   ctx.strokeStyle = '#25302f'; ctx.lineWidth = .6; ctx.setLineDash([3, 5]);
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
   ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
-  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', 'Observed USDC price in SOL. Waiting for price samples; no open position.'); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
+  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', 'Observed cbBTC price in SOL. Waiting for price samples; no open position.'); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
   const values = [...samples.map(s => s.price), ...levels.map(level => level.price)], min = Math.min(...values), max = Math.max(...values), range = max - min || max * .02 || 1;
   const firstTime = samples[0]?.time ?? 0, lastTime = samples.at(-1)?.time ?? firstTime;
   const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
@@ -138,7 +138,7 @@ function drawChart(samples) {
     ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
     ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
   }
-  canvas.setAttribute('aria-label', `Observed USDC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? levelText + ". " : ""}Details in Transactions.`);
+  canvas.setAttribute('aria-label', `Observed cbBTC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? levelText + ". " : ""}Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 async function refresh() {
@@ -155,10 +155,10 @@ async function wallet() {
     $('generate-key').hidden = w.exists;
     $('create-wallet').hidden = w.exists; $('wallet-balances').hidden = !w.exists || !!w.locked; $('deposit-card').hidden = !w.exists || !!w.locked;
     text('wallet-heading', w.exists ? 'Your trading wallet' : 'Create your Solana wallet');
-    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your wallet can receive USDC and SOL on Solana.' : 'A dedicated wallet for your bot. Deposit SOL to fund automatic USDC buys and network fees.');
+    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your wallet can receive cbBTC and SOL on Solana.' : 'A dedicated wallet for your bot. Deposit SOL to fund automatic cbBTC buys and network fees.');
     if (w.locked) { text('wallet-heading', 'Unlock your trading wallet'); text('wallet-description', 'Enter the original encryption key above. Your wallet and funds are preserved.'); }
     if (w.exists && !w.locked) {
-      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.USDC) / 1e6, 6) + ' USDC' : 'You can still copy your receiving address.');
+      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.cbBTC) / 1e8, 8) + ' cbBTC' : 'You can still copy your receiving address.');
       $('wallet-address').value = w.address;
       $('deposit-qr').hidden = !!w.demo; if (w.qr) $('deposit-qr').src = w.qr;
       $('explorer').hidden = !!w.demo; if (!w.demo) $('explorer').href = 'https://solscan.io/account/' + w.address;
