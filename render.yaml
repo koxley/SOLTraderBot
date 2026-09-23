@@ -1,4 +1,4 @@
-# Put this file and the app's package.json at the root of a dedicated private repository.
+# Put this file and the app's package.json at the root of a dedicated private repository
 services:
   - type: web
     name: sol-trader
