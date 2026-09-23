@@ -80,6 +80,7 @@ function renderTrades(trades, target) {
   }
 }
 function drawChart(samples) {
+  const trades = state?.chartTrades || state?.trades || [];
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -90,11 +91,27 @@ function drawChart(samples) {
   ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1;
   if (samples.length < 2) { text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
   const values = samples.map(s => s.price), min = Math.min(...values), max = Math.max(...values), range = max - min || max * .02 || 1;
-  const points = values.map((v, i) => [i / (values.length - 1) * (w - 4) + 2, h - 20 - (v - min) / range * (h - 40)]);
+  const firstTime = samples[0].time, lastTime = samples.at(-1).time;
+  const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
+  const points = samples.map(s => [xAt(s.time), h - 28 - (s.price - min) / range * (h - 56)]);
   const gradient = ctx.createLinearGradient(0, 0, 0, h); gradient.addColorStop(0, '#b6f36b24'); gradient.addColorStop(1, '#b6f36b00');
   ctx.beginPath(); ctx.moveTo(points[0][0], h); for (const p of points) ctx.lineTo(...p); ctx.lineTo(points.at(-1)[0], h); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
   ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.strokeStyle = '#b6f36b'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
   ctx.beginPath(); ctx.arc(...points.at(-1), 3, 0, Math.PI * 2); ctx.fillStyle = '#b6f36b'; ctx.fill();
+  const completed = trades.filter(t => t.status === 'filled' && ['buy', 'sell'].includes(t.side) && t.time >= firstTime);
+  for (const trade of completed) {
+    // Place the receipt on the observed quote line, interpolating between samples.
+    const next = samples.findIndex(s => s.time >= trade.time);
+    const right = next < 0 ? samples.length - 1 : next, left = Math.max(0, right - 1);
+    const fraction = Math.min(1, Math.max(0, (trade.time - samples[left].time) / (samples[right].time - samples[left].time || 1)));
+    const x = xAt(trade.time), y = points[left][1] + (points[right][1] - points[left][1]) * fraction;
+    const direction = trade.side === 'buy' ? 1 : -1;
+    ctx.beginPath(); ctx.moveTo(x, y + direction * 4);
+    ctx.lineTo(x - 6, y + direction * 15); ctx.lineTo(x + 6, y + direction * 15); ctx.closePath();
+    ctx.fillStyle = trade.side === 'buy' ? '#b6f36b' : '#f09391'; ctx.fill();
+    ctx.strokeStyle = '#0b0e14'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  canvas.setAttribute('aria-label', `Observed DOGE price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', time(samples[0].time)); text('chart-last', time(samples.at(-1).time));
 }
 async function refresh() {

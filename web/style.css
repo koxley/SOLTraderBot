@@ -7,3 +7,5 @@
 .mode-controls select,#wallet-key{display:block;width:100%;padding:14px;margin:12px 0;border:1px solid #394438;border-radius:10px;background:#111820;color:#fff;font:inherit}.mode-controls label{font-weight:600}#key-backed-up{margin:14px 8px 14px 0}
 
 .transaction-status{font-weight:600;color:#b6f36b}.trade-result{overflow-wrap:anywhere;min-width:0}.trade-info{min-width:0}.trade-info small{overflow-wrap:anywhere}
+
+.chart-legend{display:flex;gap:14px;align-items:center;font-size:10px;color:var(--muted);margin:2px 0 12px}
