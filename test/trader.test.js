@@ -156,6 +156,17 @@ test('display price refreshes at five seconds while chart samples stay fifteen s
   assert.equal((await fetch(url,{headers})).status,503); assert.equal(snapshot(engine).samples.length,2);
 });
 
+test('display and strategy quotes share provider spacing without overlapping requests', async () => {
+  const cfg=makeConfig({},false); cfg.apiKey='test';
+  let calls=0, release, firstStarted;
+  const started=new Promise(resolve=>firstStarted=resolve), gate=new Promise(resolve=>release=resolve);
+  const provider=new Jupiter(cfg,async()=>{calls++; if(calls===1){firstStarted(); await gate;} return {number:calls};});
+  const first=provider.quote('cbBTC','SOL','100000000');
+  const second=provider.quote('SOL','cbBTC','25000000');
+  await started; assert.equal(calls,1); release();
+  assert.equal((await first).number,1); assert.equal((await second).number,2);
+});
+
 const mint = 'DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R';
 function fixture(t, env = {}) {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3', ...env }, false);
