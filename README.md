@@ -1,4 +1,4 @@
-> **Current release: SOL/USDC.** See [SOL-USDC.md](SOL-USDC.md) for current trading units, defaults, deposits, and migration behavior. The DOGE-specific setup below describes the legacy market.
+> **Current release: SOL/cbBTC.** See [SOL-CBBTC.md](SOL-CBBTC.md) for current mint, trading direction, defaults and deposits. Older DOGE/USDC instructions below describe legacy markets.
 
 # SOL TRADER
 
