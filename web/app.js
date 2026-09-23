@@ -22,6 +22,8 @@ function render(s) {
   $('setup-notice').hidden = s.pairReady;
   $('trade-error').hidden = !s.error; text('trade-error', s.error || '');
   text('mode', s.mode.toUpperCase() + ' MODE');
+  $('trading-mode').value = s.mode;
+  $('trading-mode').disabled = actionBusy || s.running || s.busy || s.closing || !!s.pending;
   $('price').replaceChildren(document.createTextNode(s.price === null ? '— ' : number(s.price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: 'SOL' }));
   text('sample-label', s.running ? 'Monitoring market' : 'Last observed quote');
   text('realized', (s.realized > 0 ? '+' : '') + number(s.realized, 6));
@@ -34,7 +36,7 @@ function render(s) {
   $('warmup-progress').max = s.warmupRequired; $('warmup-progress').value = s.warmup;
   $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || !s.pairReady || (s.mode === 'live' && !s.wallet);
   $('stop').disabled = actionBusy || (!s.running && !s.closing && !s.busy);
-  $('close').disabled = actionBusy || s.closing || !!s.pending || (!s.position && !s.busy);
+  $('close').disabled = actionBusy || s.closing || !!s.pending || (!s.position && !s.busy) || (s.mode === 'live' && !s.wallet);
   $('reconcile').hidden = !s.pending;
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
   text('position-tag', s.position ? '1 OPEN' : 'NO POSITION');
@@ -94,11 +96,17 @@ async function balances() { try { const b = await api('balance'); text('availabl
 async function wallet() {
   try {
     const w = await api('wallet');
-    $('create-wallet').hidden = w.exists; $('wallet-balances').hidden = !w.exists; $('deposit-card').hidden = !w.exists;
+    $('wallet-key-card').hidden = w.exists && !w.locked;
+    $('wallet-key').disabled = !!w.demo; $('generate-key').disabled = !!w.demo; $('key-backed-up').disabled = !!w.demo;
+    if (w.demo) text('key-description', 'The deployed Telegram app requests your key here. Do not enter real keys in this simulated preview.');
+    $('unlock-wallet').hidden = !w.locked;
+    $('generate-key').hidden = w.exists;
+    $('create-wallet').hidden = w.exists; $('wallet-balances').hidden = !w.exists || !!w.locked; $('deposit-card').hidden = !w.exists || !!w.locked;
     text('wallet-heading', w.exists ? 'Your trading wallet' : 'Create your Solana wallet');
     text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your dedicated Solana wallet is ready to receive SOL.' : 'A dedicated wallet for your bot. Deposit SOL, then let your strategy take it from there.');
-    if (w.exists) {
-      text('wallet-sol', number(Number(w.balance.SOL) / 1e9) + ' SOL'); text('wallet-doge', number(Number(w.balance.DOGE) / 10 ** (state?.dogeDecimals ?? 8), 4) + ' DOGE');
+    if (w.locked) { text('wallet-heading', 'Unlock your trading wallet'); text('wallet-description', 'Enter the original encryption key above. Your wallet and funds are preserved.'); }
+    if (w.exists && !w.locked) {
+      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.DOGE) / 10 ** (state?.dogeDecimals ?? 8), 4) + ' DOGE' : 'You can still copy your receiving address.');
       $('wallet-address').value = w.address;
       $('deposit-qr').hidden = !!w.demo; if (w.qr) $('deposit-qr').src = w.qr;
       $('explorer').hidden = !!w.demo; if (!w.demo) $('explorer').href = 'https://solscan.io/account/' + w.address;
@@ -117,7 +125,38 @@ async function action(name) {
   finally { actionBusy = false; await refresh(); await balances(); }
 }
 for (const name of ['start', 'stop', 'close', 'reconcile']) $(name).addEventListener('click', () => action(name));
-$('create-wallet').addEventListener('click', () => action('wallet/create'));
+async function unlockWallet(create) {
+  if (actionBusy) return;
+  if (state?.demo) return action('wallet/create');
+  const field = $('wallet-key');
+  if (!/^[a-fA-F0-9]{64}$/.test(field.value) || (create && !$('key-backed-up').checked)) {
+    text('wallet-error', 'Enter a valid 64-character key and save a backup before creating a wallet.'); $('wallet-error').hidden = false; return;
+  }
+  actionBusy = true; $('wallet-error').hidden = true;
+  try {
+    const pending = api(create ? 'wallet/create' : 'wallet/unlock', 'POST', { key: field.value });
+    field.value = ''; field.type = 'password'; $('key-backed-up').checked = false;
+    await pending; toast('Wallet unlocked. Trading remains stopped.');
+  } catch (error) { text('wallet-error', error.message); $('wallet-error').hidden = false; }
+  finally { actionBusy = false; await wallet(); await refresh(); }
+}
+$('create-wallet').addEventListener('click', () => unlockWallet(true));
+$('unlock-wallet').addEventListener('click', () => unlockWallet(false));
+$('generate-key').addEventListener('click', () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  $('wallet-key').value = [...bytes].map(b => b.toString(16).padStart(2, '0')).join(''); bytes.fill(0);
+  $('wallet-key').type = 'text'; $('wallet-key').select(); $('key-backed-up').checked = false;
+  toast('Save this key in your password manager before creating the wallet.');
+});
+$('trading-mode').addEventListener('change', async event => {
+  const mode = event.target.value;
+  const acknowledged = mode === 'live' && confirm('Live mode uses real funds. Switching leaves the bot stopped. Enable live mode?');
+  if (mode === 'live' && !acknowledged) { render(state); return; }
+  actionBusy = true; settingsDirty = false;
+  try { await api('mode', 'POST', { mode, acknowledged }); toast('Mode changed. Trading remains stopped.'); }
+  catch (error) { toast(error.message); }
+  finally { actionBusy = false; await refresh(); await balances(); }
+});
 $('refresh-wallet').addEventListener('click', async () => { await wallet(); toast('Balance checked.'); });
 $('copy-address').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('wallet-address').value); toast('Wallet address copied.'); } catch { $('wallet-address').select(); toast('Select and copy the address above.'); } });
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
