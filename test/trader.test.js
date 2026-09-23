@@ -4,15 +4,17 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac, randomBytes } from 'node:crypto';
-import { config, units, format } from '../src/config.js';
+import { config as makeConfig, units, format } from '../src/config.js';
 import { Store } from '../src/store.js';
 import { Engine, signal, validateQuote } from '../src/engine.js';
-import { authenticate, appServer } from '../src/server.js';
+import { authenticate, appServer, snapshot } from '../src/server.js';
 import { Vault } from '../src/vault.js';
 import { Telegram } from '../src/telegram.js';
 import { Jupiter, Wallet } from '../src/providers.js';
 import { Keypair, TransactionMessage, VersionedTransaction, SystemProgram } from '@solana/web3.js';
 import { strategySettings } from '../src/strategy.js';
+
+const config = (env = {}, required = true) => makeConfig({ TRADING_PAIR: 'DOGE_SOL', ...env }, required);
 
 test('strategy settings persist, update runtime and reset sampling only when needed', t => {
   const f = fixture(t); const original = strategySettings(f.cfg);
@@ -374,4 +376,81 @@ test('Mini App exposes saved buy/sell receipts in time order and separates paper
   assert.equal(data.trades[0].received, '0.027'); assert.equal(data.trades[0].amount, '27');
   assert.equal(data.trades[1].received, '27'); assert.equal(data.trades[1].amount, '0.025');
   assert.ok(data.trades.every(o => o.mode === 'paper' && o.status === 'filled'));
+});
+
+
+test('SOL/USDC buys SOL using six-decimal USDC and closes only its tracked SOL', async t => {
+  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  const calls = [];
+  const provider = { async quote(input, output, amount) {
+    calls.push({ input, output, amount });
+    const out = input === 'USDC' ? BigInt(amount) * 1000000000n / 100000000n : BigInt(amount) * 100000000n / 1000000000n;
+    return { inputMint: cfg.tokens[input].mint, outputMint: cfg.tokens[output].mint, inAmount: amount,
+      outAmount: String(out), otherAmountThreshold: String(out), slippageBps: 50, swapMode: 'ExactIn' };
+  } };
+  const engine = new Engine(cfg, store, provider); engine.start();
+  await engine.trade({side:'buy',reason:'test'});
+  assert.deepEqual(calls[0], {input:'USDC',output:'SOL',amount:'250000'});
+  assert.equal(engine.position().amount, '2500000');
+  assert.equal((await engine.balances()).USDC, '750000');
+  assert.equal((await engine.balances()).SOL, '1002500000');
+  store.set(engine.key('samples'), [{time:Date.now(),price:'100000000'}]);
+  assert.equal(snapshot(engine).price,100); assert.equal(snapshot(engine).position.cost,'0.25');
+  engine.requestClose(); await engine.trade({side:'sell',reason:'close'},true);
+  assert.deepEqual(calls[1], {input:'SOL',output:'USDC',amount:'2500000'});
+  assert.equal(engine.position(),null); assert.equal((await engine.balances()).SOL,'1000000000');
+  assert.equal((await engine.balances()).USDC,'1000000'); assert.equal(snapshot(engine).trades[0].mode,'paper');
+});
+
+test('SOL/USDC keeps legacy paper state isolated and blocks legacy live exposure', t => {
+  const cfg=makeConfig({},false), store=new Store(':memory:',{SOL:'2',DOGE:'99'}); t.after(()=>store.close());
+  store.set('market','old-doge-mint:8'); store.set('paper:position',{amount:'99',cost:'2'});
+  store.put({id:'legacy',mode:'paper',side:'buy',status:'filled',time:1});
+  const engine=new Engine(cfg,store,{}); assert.equal(engine.position(),null); assert.equal(engine.orders().length,0);
+  assert.deepEqual(store.get('paper'),{SOL:'2',DOGE:'99'}); assert.equal((store.get(engine.paperKey())).USDC,'1000000');
+  store.set('live:position',{amount:'99',cost:'2'});
+  assert.throws(()=>new Engine(makeConfig({},false),store,{}),/legacy DOGE/);
+});
+
+test('SOL/USDC live buy preflight verifies USDC spent and SOL received', async () => {
+  const cfg = makeConfig({}, false), signer = Keypair.generate(), wallet = new Wallet(cfg, signer);
+  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: signer.publicKey,
+    recentBlockhash: Keypair.generate().publicKey.toBase58(), instructions: [] }).compileToV0Message());
+  const tokenData = value => { const data = Buffer.alloc(165); data.writeBigUInt64LE(value, 64); return data; };
+  let afterSol = 1002495000;
+  wallet.connection = {
+    async isBlockhashValid() { return { value: true }; }, async getBalance() { return 1000000000; },
+    async getAccountInfo() { return { data: tokenData(1000000n) }; },
+    async simulateTransaction() { return { value: { err: null, accounts: [
+      { lamports: afterSol }, { data: [tokenData(750000n).toString('base64'), 'base64'] }] } }; }
+  };
+  const q = { inputMint: cfg.tokens.USDC.mint, inAmount: '250000', otherAmountThreshold: '2500000',
+    signatureFeeLamports: 5000, prioritizationFeeLamports: 0, rentFeeLamports: 0,
+    transaction: Buffer.from(tx.serialize()).toString('base64') };
+  assert.ok((await wallet.prepare(q)).signed);
+  afterSol = 1000000000; await assert.rejects(wallet.prepare(q), /do not match/);
+});
+
+test('SOL/USDC reconciles buy and sell receipts in the correct direction', async () => {
+  const cfg = makeConfig({}, false), wallet = new Wallet(cfg, Keypair.generate());
+  const token = amount => [{ owner: wallet.address, mint: cfg.tokens.USDC.mint, uiTokenAmount: { amount: String(amount) } }];
+  let buy = true;
+  wallet.connection = { async getTransaction() { return { meta: { err: null, fee: 5000,
+    preBalances: [1000000000], postBalances: [buy ? 1002495000 : 997495000],
+    preTokenBalances: token(1000000), postTokenBalances: token(buy ? 750000 : 1250000) } }; } };
+  assert.deepEqual(await wallet.receipt({ input: 'USDC', side: 'buy', signature: 'mock' }), { input: '250000', output: '2500000' });
+  buy = false;
+  assert.deepEqual(await wallet.receipt({ input: 'SOL', side: 'sell', signature: 'mock' }), { input: '2500000', output: '250000' });
+});
+
+test('SOL/USDC settings use USDC precision and paper reset leaves live and running balances alone', t => {
+  const cfg=makeConfig({},false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
+  const engine=new Engine(cfg,store,{});
+  engine.configure({...strategySettings(cfg),size:'0.123456'}); assert.equal(cfg.tradeSize,'123456');
+  assert.throws(()=>engine.configure({...strategySettings(cfg),size:'0.1234567'}),/6 decimal/);
+  store.set(engine.paperKey(),{SOL:'12',USDC:'34'}); engine.resetPaperSOL();
+  assert.deepEqual(store.get(engine.paperKey()),{SOL:'12',USDC:'1000000'});
+  engine.start(); store.set(engine.paperKey(),{SOL:'12',USDC:'34'}); engine.resetPaperSOL();
+  assert.equal(store.get(engine.paperKey()).USDC,'34'); engine.stop(); cfg.mode='live'; engine.resetPaperSOL();
+  assert.equal(store.get(engine.paperKey()).USDC,'34');
 });
