@@ -12,3 +12,5 @@ Prices, entry costs, returns, limits and TP/SL lines use SOL. Default trade size
 Paper trading starts with 1 SOL and zero cbBTC. Edit amount under Available to trade changes the saved paper SOL amount while stopped; reopening or starting resets it to that saved amount. Live wallet balances cannot be edited. USDC-market SOL strategy settings and saved paper balance amounts carry forward; old holdings and history remain stored separately. A position or unsettled transaction in another live market must be closed/reconciled in its previous deployment before migrating. No funds are automatically swapped.
 
 Buy/sell triangles and labeled TP/SL lines remain on the chart. Wallet keys are still entered in the app. Deployment leaves the bot stopped.
+
+The open Mini App requests a fresh displayed quote every 5 seconds, including while stopped. Its chart records one observed quote per 15-second interval. These display updates do not run the strategy or change its separately configured sampling interval. Failed price refreshes are labeled and retried.
