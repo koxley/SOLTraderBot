@@ -45,17 +45,22 @@ function render(s) {
   text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
   text('mint-label', s.dogeMint ? 'Wrapped DOGE mint: ' + s.dogeMint : 'Wrapped DOGE mint: awaiting configuration');
-  text('trade-count', s.trades.length + ' RECENT');
+  text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
+  text('dashboard-trade-count', s.mode.toUpperCase());
+  text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
   if (!settingsDirty && !savingSettings) fillSettings(s.strategy);
   const locked = s.running || s.busy || s.closing || !!s.pending;
   $('strategy-fields').disabled = locked || savingSettings;
   $('save-strategy').disabled = locked || savingSettings;
   $('reset-strategy').disabled = savingSettings;
   $('settings-lock').hidden = !locked;
-  renderTrades(s.trades); drawChart(s.samples);
+  renderTrades(s.trades, 'trade-list'); renderTrades(s.trades.slice(0, 5), 'dashboard-trade-list'); drawChart(s.samples);
 }
-function renderTrades(trades) {
-  const list = $('trade-list'); list.replaceChildren();
+function renderTrades(trades, target) {
+  const list = $(target);
+  const revision = JSON.stringify(trades);
+  if (list.dataset.revision === revision) return;
+  list.dataset.revision = revision; list.replaceChildren();
   if (!trades.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = 'No trades yet. Start the bot to begin building your trade history.'; list.append(p); }
   for (const trade of trades) {
     const row = document.createElement('div'); row.className = 'trade-item';
@@ -63,10 +68,13 @@ function renderTrades(trades) {
     const info = document.createElement('div'); info.className = 'trade-info';
     const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought DOGE' : 'Sold DOGE';
     if (trade.status !== 'filled') title.textContent = (trade.side === 'buy' ? 'Buy' : 'Sell') + ' · ' + trade.status;
+    const status = document.createElement('small'); status.className = 'transaction-status';
+    const labels = { filled: 'Completed', submitting: 'Submitting', unknown: 'Needs reconciliation', failed: 'Failed', expired: 'Expired' };
+    status.textContent = `${(trade.mode || state.mode).toUpperCase()} · ${labels[trade.status] || trade.status}`;
     const reason = document.createElement('small'); reason.textContent = trade.reason;
-    const date = document.createElement('small'); date.textContent = new Date(trade.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); info.append(title, reason, date);
-    const result = document.createElement('div'); result.className = 'trade-result'; result.textContent = number(trade.amount, 5) + ' ' + trade.input;
-    const out = document.createElement('small'); out.textContent = trade.received ? '→ ' + number(trade.received, 5) + ' ' + trade.output : 'Awaiting result'; result.append(out);
+    const date = document.createElement('small'); date.textContent = new Date(trade.time).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }); info.append(title, status, reason, date);
+    const result = document.createElement('div'); result.className = 'trade-result'; result.textContent = (trade.status === 'filled' ? 'Sent ' : 'Requested ') + trade.amount + ' ' + trade.input;
+    const out = document.createElement('small'); out.textContent = trade.received !== null ? 'Received ' + trade.received + ' ' + trade.output : ['failed', 'expired'].includes(trade.status) ? 'No completed swap' : 'Awaiting confirmation'; result.append(out);
     if (trade.signature) { const a = document.createElement('a'); a.href = 'https://solscan.io/tx/' + encodeURIComponent(trade.signature); a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'View transaction ↗'; const small = document.createElement('small'); small.append(a); result.append(small); }
     row.append(icon, info, result); list.append(row);
   }
@@ -162,7 +170,7 @@ $('copy-address').addEventListener('click', async () => { try { await navigator.
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
   activeView = button.dataset.view;
   document.querySelectorAll('.view').forEach(view => view.hidden = view.id !== activeView);
-  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('selected', b === button));
+  document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('selected', b.dataset.view === activeView));
   if (activeView === 'wallet-view') wallet(); if (activeView === 'dashboard' && state) drawChart(state.samples);
   window.scrollTo({ top: 0 });
 }));
