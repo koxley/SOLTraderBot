@@ -97,12 +97,17 @@ export class Engine {
   }
   position() { return this.store.get(this.key('position')) || null; }
   pending() { return this.store.orders().filter(o => o.mode === this.cfg.mode && unresolved.has(o.status)); }
+  resetPaperSOL() {
+    if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
+    this.store.set('paper', { ...this.store.get('paper'), SOL: '1000000000' });
+  }
   start() {
     if (!this.cfg.pairReady) throw new UserError('Set the verified wrapped DOGE mint before trading.');
     if (this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
     if (BigInt(this.cfg.tradeSize) > BigInt(this.cfg.maxTrade)) throw new UserError('TRADE_SIZE_SOL exceeds MAX_TRADE_SOL.');
+    this.resetPaperSOL();
     this.stopping = false;
     this.store.set('running', true);
     this.store.set('errors', 0);

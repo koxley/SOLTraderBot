@@ -123,6 +123,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
               return reply(200, { address: wallet.address });
             } finally { walletBusy = false; }
           }
+          case '/api/paper/reset-balance': engine.resetPaperSOL(); break;
           case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(); break;
           case '/api/close': engine.requestClose(); break;
