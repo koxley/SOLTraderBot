@@ -89,13 +89,14 @@ function renderTrades(trades, target) {
 }
 function drawChart(samples) {
   const trades = state?.chartTrades || state?.trades || [];
-  const entry = Number(state?.position?.cost) / Number(state?.position?.amount);
+  const previewLevels = !state?.position;
+  const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
   const levels = Number.isFinite(entry) && entry > 0 ? [
     { name: 'TP', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
     { name: 'SL', price: entry * (1 - state.strategy.stopLoss / 100), color: '#f09391', offset: 12 }
   ] : [];
   const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`).join(' · ');
-  text('chart-levels', levelText || 'TP / SL levels appear when a position is open.');
+  text('chart-levels', levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -132,13 +133,13 @@ function drawChart(samples) {
     const y = h - 28 - (level.price - min) / range * (h - 56);
     ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(12, y); ctx.lineTo(w - 12, y);
     ctx.strokeStyle = level.color; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
-    const label = `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`;
+    const label = `${level.name}${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`;
     ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     const labelWidth = ctx.measureText(label).width;
     ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
     ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
   }
-  canvas.setAttribute('aria-label', `Observed cbBTC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? levelText + ". " : ""}Details in Transactions.`);
+  canvas.setAttribute('aria-label', `Observed cbBTC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? "Preview levels, no open position: " : "Position levels: ") + levelText + ". " : ""}Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 function renderPrice() {
