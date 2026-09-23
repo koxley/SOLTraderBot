@@ -89,6 +89,13 @@ function renderTrades(trades, target) {
 }
 function drawChart(samples) {
   const trades = state?.chartTrades || state?.trades || [];
+  const entry = Number(state?.position?.cost) / Number(state?.position?.amount);
+  const levels = Number.isFinite(entry) && entry > 0 ? [
+    { name: 'TP', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
+    { name: 'SL', price: entry * (1 - state.strategy.stopLoss / 100), color: '#f09391', offset: 12 }
+  ] : [];
+  const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`).join(' · ');
+  text('chart-levels', levelText || 'TP / SL levels appear when a position is open.');
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -96,17 +103,19 @@ function drawChart(samples) {
   const w = rect.width, h = rect.height;
   ctx.strokeStyle = '#25302f'; ctx.lineWidth = .6; ctx.setLineDash([3, 5]);
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
-  ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1;
-  if (samples.length < 2) { text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
-  const values = samples.map(s => s.price), min = Math.min(...values), max = Math.max(...values), range = max - min || max * .02 || 1;
-  const firstTime = samples[0].time, lastTime = samples.at(-1).time;
+  ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
+  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', 'Observed USDC price in SOL. Waiting for price samples; no open position.'); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
+  const values = [...samples.map(s => s.price), ...levels.map(level => level.price)], min = Math.min(...values), max = Math.max(...values), range = max - min || max * .02 || 1;
+  const firstTime = samples[0]?.time ?? 0, lastTime = samples.at(-1)?.time ?? firstTime;
   const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
   const points = samples.map(s => [xAt(s.time), h - 28 - (s.price - min) / range * (h - 56)]);
   const gradient = ctx.createLinearGradient(0, 0, 0, h); gradient.addColorStop(0, '#b6f36b24'); gradient.addColorStop(1, '#b6f36b00');
+  if (points.length) {
   ctx.beginPath(); ctx.moveTo(points[0][0], h); for (const p of points) ctx.lineTo(...p); ctx.lineTo(points.at(-1)[0], h); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
   ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.strokeStyle = '#b6f36b'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
   ctx.beginPath(); ctx.arc(...points.at(-1), 3, 0, Math.PI * 2); ctx.fillStyle = '#b6f36b'; ctx.fill();
-  const completed = trades.filter(t => t.status === 'filled' && ['buy', 'sell'].includes(t.side) && t.time >= firstTime);
+  }
+  const completed = trades.filter(t => points.length && t.status === 'filled' && ['buy', 'sell'].includes(t.side) && t.time >= firstTime);
   for (const trade of completed) {
     // Place the receipt on the observed quote line, interpolating between samples.
     const next = samples.findIndex(s => s.time >= trade.time);
@@ -119,8 +128,18 @@ function drawChart(samples) {
     ctx.fillStyle = trade.side === 'buy' ? '#b6f36b' : '#f09391'; ctx.fill();
     ctx.strokeStyle = '#0b0e14'; ctx.lineWidth = 1.5; ctx.stroke();
   }
-  canvas.setAttribute('aria-label', `Observed USDC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. Details in Transactions.`);
-  const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', time(samples[0].time)); text('chart-last', time(samples.at(-1).time));
+  for (const level of levels) {
+    const y = h - 28 - (level.price - min) / range * (h - 56);
+    ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(12, y); ctx.lineTo(w - 12, y);
+    ctx.strokeStyle = level.color; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
+    const label = `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`;
+    ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
+    ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
+  }
+  canvas.setAttribute('aria-label', `Observed USDC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? levelText + ". " : ""}Details in Transactions.`);
+  const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
