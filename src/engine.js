@@ -29,7 +29,7 @@ export function signal(samples, position, cfg) {
   if (!samples.length) return null;
   const last = BigInt(samples.at(-1).price);
   if (position) {
-    const value = BigInt(position.amount) * last / (10n ** BigInt(cfg.tokens.DOGE.decimals));
+    const value = BigInt(position.amount) * last / (10n ** BigInt(cfg.tokens[cfg.base].decimals));
     if (value * 10000n <= BigInt(position.cost) * BigInt(10000 - cfg.stopLoss)) return { side: 'sell', reason: 'stop loss' };
     if (value * 10000n >= BigInt(position.cost) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit' };
   }
@@ -52,21 +52,25 @@ export class Engine {
     this.closing = false;
     this.defaultStrategy = strategySettings(cfg);
     // Restart in recovery mode when real exposure exists, even if the startup default is paper.
-    if (store.get('live:position') || store.orders().some(o => o.mode === 'live' && unresolved.has(o.status))) cfg.mode = 'live';
-    const market = `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}`;
-    const existingMarket = this.store.get('market');
+    if (store.get('SOL_USDC:live:position') || store.get('live:position') || store.orders().some(o => o.mode === 'live' && unresolved.has(o.status))) cfg.mode = 'live';
+    if (cfg.pair === 'SOL_USDC' && (store.get('live:position') || store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') === 'DOGE_SOL' && unresolved.has(o.status))))
+      throw new Error('Close or reconcile the legacy DOGE position before switching to SOL/USDC.');
+    if (cfg.pair === 'SOL_USDC' && !store.get('paper:SOL_USDC')) store.set('paper:SOL_USDC', cfg.paper);
+    const marketKey = cfg.pair === 'SOL_USDC' ? 'market:SOL_USDC' : 'market';
+    const market = cfg.pair === 'DOGE_SOL' ? `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}` : `${cfg.tokens.SOL.mint}:${cfg.tokens.USDC.mint}`;
+    const existingMarket = this.store.get(marketKey);
     if (existingMarket && existingMarket !== market) throw new Error('Token configuration changed. Use a separate DATA_DIR for a different token.');
-    this.store.set('market', market);
+    this.store.set(marketKey, market);
     if (wallet && cfg.mode === 'live') this.bindWallet(wallet.address);
     // A host restart must never silently resume automated spending.
     this.store.set('running', false);
     const saved = this.store.get(this.key('strategy'));
-    if (saved) Object.assign(this.cfg, validateStrategy(saved));
+    if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair));
   }
   configure(settings) {
     if (this.active() || this.busy || this.closing || this.pending().length)
       throw new UserError('Stop the bot and wait for any unsettled trade before changing the strategy.');
-    const next = validateStrategy(settings);
+    const next = validateStrategy(settings, this.cfg.pair);
     const reset = next.fast !== this.cfg.fast || next.slow !== this.cfg.slow || next.sampleMs !== this.cfg.sampleMs;
     this.store.atomic(() => {
       this.store.set(this.key('strategy'), strategySettings(next));
@@ -74,7 +78,9 @@ export class Engine {
     });
     Object.assign(this.cfg, next);
   }
-  key(name) { return `${this.cfg.mode}:${name}`; }
+  key(name) { return `${this.cfg.pair === 'SOL_USDC' ? 'SOL_USDC:' : ''}${this.cfg.mode}:${name}`; }
+  paperKey() { return this.cfg.pair === 'SOL_USDC' ? 'paper:SOL_USDC' : 'paper'; }
+  orders() { return this.store.orders().filter(o => (o.pair || 'DOGE_SOL') === this.cfg.pair); }
   switchMode(mode, acknowledged = false) {
     if (!['paper', 'live'].includes(mode)) throw new UserError('Choose paper or live mode.');
     if (mode === this.cfg.mode) return;
@@ -84,7 +90,7 @@ export class Engine {
       throw new UserError('Close your live position before switching to paper mode.');
     if (mode === 'live' && (!acknowledged || !this.wallet))
       throw new UserError('Unlock your wallet and acknowledge real-fund trading before selecting live.');
-    const settings = validateStrategy(this.store.get(`${mode}:strategy`) || this.defaultStrategy);
+    const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'SOL_USDC' ? 'SOL_USDC:' : ''}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair);
     if (mode === 'live') this.bindWallet(this.wallet.address);
     this.stop();
     Object.assign(this.cfg, settings, { mode });
@@ -96,13 +102,13 @@ export class Engine {
     this.store.set('walletAddress', address);
   }
   position() { return this.store.get(this.key('position')) || null; }
-  pending() { return this.store.orders().filter(o => o.mode === this.cfg.mode && unresolved.has(o.status)); }
+  pending() { return this.orders().filter(o => o.mode === this.cfg.mode && unresolved.has(o.status)); }
   resetPaperSOL() {
     if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
-    this.store.set('paper', { ...this.store.get('paper'), SOL: '1000000000' });
+    this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), ...(this.cfg.pair === 'SOL_USDC' ? { USDC: '1000000' } : { SOL: '1000000000' }) });
   }
   start() {
-    if (!this.cfg.pairReady) throw new UserError('Set the verified wrapped DOGE mint before trading.');
+    if (!this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
     if (this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
@@ -116,11 +122,11 @@ export class Engine {
   stop() { this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false); }
   requestClose() { this.stop(); this.closing = true; }
   active() { return !this.stopping && this.store.get('running') === true; }
-  async balances() { return this.cfg.mode === 'paper' ? this.store.get('paper') : this.wallet ? this.wallet.balances() : { SOL: '0', DOGE: '0' }; }
+  async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', USDC: '0', DOGE: '0' }; }
   budget(notional) {
     if (notional > BigInt(this.cfg.maxTrade)) throw new UserError('Per-trade limit exceeded. Adjust limits before restarting.');
     const day = new Date(this.now()).toISOString().slice(0, 10);
-    const used = this.store.orders().filter(o => o.mode === this.cfg.mode && o.day === day && ['filled', 'submitting', 'unknown'].includes(o.status))
+    const used = this.orders().filter(o => o.mode === this.cfg.mode && o.day === day && ['filled', 'submitting', 'unknown'].includes(o.status))
       .reduce((sum, o) => sum + BigInt(o.notional), 0n);
     if (used + notional > BigInt(this.cfg.maxDaily)) throw new UserError('Daily gross trading limit reached (UTC).');
   }
@@ -139,7 +145,7 @@ export class Engine {
       let samples = this.store.get(this.key('samples')) || [];
       if (samples.length && now - samples.at(-1).time < this.cfg.sampleMs) return null;
       if (samples.length && now - samples.at(-1).time > this.cfg.sampleMs * 3) samples = [];
-      const q = validateQuote(await this.jupiter.quote('DOGE', 'SOL', (10n ** BigInt(this.cfg.tokens.DOGE.decimals)).toString()), 'DOGE', 'SOL', (10n ** BigInt(this.cfg.tokens.DOGE.decimals)).toString(), this.cfg);
+      const q = validateQuote(await this.jupiter.quote(this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString()), this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString(), this.cfg);
       samples.push({ time: this.now(), price: q.outAmount });
       samples = samples.slice(-this.cfg.slow * 10);
       this.store.set(this.key('samples'), samples);
@@ -161,7 +167,7 @@ export class Engine {
   async trade({ side, reason }, forceExit = false) {
     const generation = this.generation;
     const allowed = () => generation === this.generation && (this.active() || forceExit);
-    const input = side === 'buy' ? 'SOL' : 'DOGE', output = side === 'buy' ? 'DOGE' : 'SOL';
+    const input = side === 'buy' ? this.cfg.quote : this.cfg.base, output = side === 'buy' ? this.cfg.base : this.cfg.quote;
     const amount = side === 'buy' ? this.cfg.tradeSize : this.position()?.amount;
     if (!amount) throw new UserError('No strategy position to sell.');
     const fetchedAt = this.now();
@@ -182,7 +188,7 @@ export class Engine {
         throw new UserError('Insufficient SOL gas reserve.');
     }
     if (!allowed()) return 'Stopped before trade submission.';
-    const order = { id: randomUUID(), mode: this.cfg.mode, side, reason, input, output, amount,
+    const order = { id: randomUUID(), pair: this.cfg.pair, mode: this.cfg.mode, side, reason, input, output, amount,
       expected: q.outAmount, minimum: q.otherAmountThreshold, notional: notional.toString(),
       day: new Date(this.now()).toISOString().slice(0, 10), time: this.now(), status: 'submitting' };
     if (this.cfg.mode === 'paper') {
@@ -219,14 +225,14 @@ export class Engine {
     this.store.atomic(() => {
       if (this.store.order(order.id)?.status === 'filled') return;
       if (order.mode === 'paper') {
-        const b = this.store.get('paper');
+        const b = this.store.get(this.paperKey());
         if (BigInt(b[order.input]) < BigInt(actualInput)) throw new UserError('Insufficient paper balance.');
         b[order.input] = (BigInt(b[order.input]) - BigInt(actualInput)).toString();
         b[order.output] = (BigInt(b[order.output]) + BigInt(actualOutput)).toString();
-        this.store.set('paper', b);
+        this.store.set(this.paperKey(), b);
       }
       const old = this.position();
-      if (order.side === 'sell' && old) order.realizedSOL = (BigInt(actualOutput) - BigInt(old.cost)).toString();
+      if (order.side === 'sell' && old) order.realizedQuote = (BigInt(actualOutput) - BigInt(old.cost)).toString();
       this.store.set(this.key('position'), order.side === 'buy' ? { amount: actualOutput, cost: actualInput, opened: this.now() } : null);
       Object.assign(order, { status: 'filled', actualInput, actualOutput });
       this.store.put(order);
@@ -258,6 +264,6 @@ export class Engine {
   status() {
     const samples = this.store.get(this.key('samples')) || [];
     const p = this.position();
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\nSOL/DOGE · EMA ${this.cfg.fast}/${this.cfg.slow} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, this.cfg.slow + 1)}/${this.cfg.slow + 1}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}\nTrade size: ${format(this.cfg.tradeSize, 9)} SOL\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, 9)} SOL/trade; ${format(this.cfg.maxDaily, 9)} SOL gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens.DOGE.decimals)} DOGE; cost ${format(p.cost, 9)} SOL` : 'none'}\nUnsettled trades: ${this.pending().length}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${this.cfg.base}/${this.cfg.quote} · EMA ${this.cfg.fast}/${this.cfg.slow} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, this.cfg.slow + 1)}/${this.cfg.slow + 1}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}`;
   }
 }

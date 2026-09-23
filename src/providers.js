@@ -18,7 +18,7 @@ export class Jupiter {
     const delay = (this.cfg.apiKey ? 150 : 2100) - (Date.now() - this.lastRequest);
     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
     this.lastRequest = Date.now();
-    if (!this.cfg.pairReady) throw new UserError('Wrapped DOGE mint is not configured.');
+    if (!this.cfg.pairReady) throw new UserError('Trading token mint is not configured.');
     const params = new URLSearchParams({ inputMint: this.cfg.tokens[input].mint, outputMint: this.cfg.tokens[output].mint,
       amount, slippageBps: String(this.cfg.slippage), swapMode: 'ExactIn', excludeRouters: 'jupiterz' });
     if (taker) params.set('taker', taker);
@@ -49,10 +49,10 @@ export class Wallet {
   async balances() {
     const [sol, tokens] = await Promise.all([
       this.connection.getBalance(this.signer.publicKey),
-      this.cfg.pairReady ? this.connection.getParsedTokenAccountsByOwner(this.signer.publicKey, { mint: new PublicKey(this.cfg.tokens.DOGE.mint) }) : Promise.resolve({ value: [] }),
+      this.cfg.pairReady ? this.connection.getParsedTokenAccountsByOwner(this.signer.publicKey, { mint: new PublicKey(this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint) }) : Promise.resolve({ value: [] }),
     ]);
     if (!Number.isSafeInteger(sol)) throw new UserError('SOL balance exceeds safe RPC integer range.');
-    return { SOL: String(sol), DOGE: tokens.value.reduce((sum, t) => sum + BigInt(t.account.data.parsed.info.tokenAmount.amount), 0n).toString() };
+    return { SOL: String(sol), [this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE']: tokens.value.reduce((sum, t) => sum + BigInt(t.account.data.parsed.info.tokenAmount.amount), 0n).toString() };
   }
   async prepare(quote) {
     const tx = VersionedTransaction.deserialize(Buffer.from(quote.transaction, 'base64'));
@@ -60,7 +60,7 @@ export class Wallet {
       throw new UserError('Unexpected fee payer or additional signer; refusing transaction.');
     if (!(await this.connection.isBlockhashValid(tx.message.recentBlockhash)).value)
       throw new UserError('Transaction expired; request a new quote.');
-    const mint = new PublicKey(this.cfg.tokens.DOGE.mint);
+    const mint = new PublicKey(this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint);
     const tokenProgram = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
     const [ata] = PublicKey.findProgramAddressSync([this.signer.publicKey.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'));
@@ -96,14 +96,14 @@ export class Wallet {
     const tx = await this.connection.getTransaction(order.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
     if (!tx?.meta || tx.meta.err) return null;
     const meta = tx.meta;
-    const tokenTotal = list => (list || []).filter(b => b.owner === this.address && b.mint === this.cfg.tokens.DOGE.mint)
+    const tokenTotal = list => (list || []).filter(b => b.owner === this.address && b.mint === this.cfg.tokens[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint)
       .reduce((sum, b) => sum + BigInt(b.uiTokenAmount.amount), 0n);
     const dogeDelta = tokenTotal(meta.postTokenBalances) - tokenTotal(meta.preTokenBalances);
     if (![meta.postBalances[0], meta.preBalances[0], meta.fee].every(Number.isSafeInteger)) return null;
     // Fee payer is verified before signing. SOL received is conservative if rent was paid.
     const solDelta = BigInt(meta.postBalances[0]) - BigInt(meta.preBalances[0]) + BigInt(meta.fee);
-    const input = order.side === 'buy' ? -solDelta : -dogeDelta;
-    const output = order.side === 'buy' ? dogeDelta : solDelta;
+    const input = order.input === 'SOL' ? -solDelta : -dogeDelta;
+    const output = order.input === 'SOL' ? dogeDelta : solDelta;
     if (input <= 0n || output <= 0n) return null;
     return { input: input.toString(), output: output.toString() };
   }
@@ -113,10 +113,10 @@ export async function verifyMint(cfg) {
   if (!cfg.pairReady) return;
   const connection = new Connection(cfg.rpc, { commitment: 'confirmed', disableRetryOnRateLimit: true,
     fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(15000) }) });
-  const result = await connection.getParsedAccountInfo(new PublicKey(cfg.tokens.DOGE.mint));
+  const result = await connection.getParsedAccountInfo(new PublicKey(cfg.tokens[cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].mint));
   const account = result.value;
   // Keep this implementation scoped to classic SPL tokens; transfer-fee extensions need extra accounting.
   if (!account || account.owner.toBase58() !== 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
-      account.data.parsed?.type !== 'mint' || account.data.parsed.info.decimals !== cfg.tokens.DOGE.decimals)
-    throw new Error('DOGE mint is not a classic SPL mint with the configured decimals.');
+      account.data.parsed?.type !== 'mint' || account.data.parsed.info.decimals !== cfg.tokens[cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'].decimals)
+    throw new Error('Trading token mint is not a classic SPL mint with the configured decimals.');
 }

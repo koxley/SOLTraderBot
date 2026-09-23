@@ -36,17 +36,17 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
   const samples = engine.store.get(engine.key('samples')) || [];
-  const orders = engine.store.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
-  const realized = orders.filter(o => o.realizedSOL).reduce((n, o) => n + BigInt(o.realizedSOL), 0n);
+  const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
+  const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
   const last = samples.at(-1);
-  return { mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
-    wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens.DOGE.mint, dogeDecimals: cfg.tokens.DOGE.decimals, pending: engine.pending().length,
-    price: last ? Number(last.price) / 1e9 : null,
-    samples: samples.map(s => ({ time: s.time, price: Number(s.price) / 1e9 })),
+  return { base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
+    wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, pending: engine.pending().length,
+    price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
+    samples: samples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
     warmup: Math.min(samples.length, cfg.slow + 1), warmupRequired: cfg.slow + 1,
-    position: p ? { amount: format(p.amount, cfg.tokens.DOGE.decimals), cost: format(p.cost, 9),
-      value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens.DOGE.decimals))) / 1e9 : null } : null,
-    realized: Number(realized) / 1e9,
+    position: p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
+      value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
+    realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),
     chartTrades: orders.filter(o => o.status === 'filled' && samples.length && o.time >= samples[0].time)
       .map(o => ({ time: o.time, side: o.side, status: o.status })),
@@ -81,7 +81,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       if (req.method === 'GET' && path === '/api/balance') return reply(200, await engine.balances());
       if (req.method === 'GET' && path === '/api/wallet') {
         if (!engine.wallet) return reply(200, { exists: vault?.exists() || false, locked: vault?.exists() || false, demo });
-        if (demo) return reply(200, { exists: true, demo: true, address: 'Preview wallet — no real deposits', balance: { SOL: '0', DOGE: '0' } });
+        if (demo) return reply(200, { exists: true, demo: true, address: 'Preview wallet — no real deposits', balance: await engine.balances() });
         const address = engine.wallet.address;
         let balance = null;
         try { balance = await engine.wallet.balances(); } catch { /* The deposit address remains available during RPC outages. */ }
@@ -106,7 +106,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
           case '/api/wallet/unlock':
           case '/api/wallet/create': {
             if (demo) {
-              engine.wallet ||= { address: 'Preview wallet', balances: async () => ({ SOL: '0', DOGE: '0' }) };
+              engine.wallet ||= { address: 'Preview wallet', balances: async () => ({ SOL: '0', USDC: '0', DOGE: '0' }) };
               return reply(200, { message: 'Preview wallet created. Deposits are disabled in the demo.' });
             }
             if (!vault) throw new UserError('Wallet service unavailable.');

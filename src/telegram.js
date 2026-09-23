@@ -1,7 +1,7 @@
 import { jsonRequest } from './providers.js';
 import { UserError, format } from './config.js';
 
-export const HELP = `SOL TRADER — automatic SOL/DOGE trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only DOGE bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
+export const HELP = `SOL TRADER — automatic SOL/USDC trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only SOL bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
 
 export class Telegram {
   constructor(cfg, engine, publicUrl) { Object.assign(this, { cfg, engine, publicUrl }); this.stopped = false; }
@@ -41,7 +41,7 @@ export class Telegram {
         case '/stop': this.engine.stop(); response = 'Stopped. Position kept. Any already submitted transaction may still complete.'; break;
         case '/close': this.engine.requestClose(); response = 'Strategy stopped. Closing the bot position as soon as any current operation settles.'; break;
         case '/status': response = this.engine.status(); break;
-        case '/balance': { const b = await this.engine.balances(); response = `${this.cfg.mode.toUpperCase()} balances\n${format(b.SOL, 9)} SOL\n${format(b.DOGE, this.cfg.tokens.DOGE.decimals)} DOGE${this.engine.wallet ? `\n${this.engine.wallet.address}` : ''}`; break; }
+        case '/balance': { const b = await this.engine.balances(); response = `${this.cfg.mode.toUpperCase()} balances\n${format(b.SOL, 9)} SOL\n${format(b[this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'], this.cfg.pair === 'SOL_USDC' ? 6 : this.cfg.tokens.DOGE.decimals)} ${this.cfg.pair === 'SOL_USDC' ? 'USDC' : 'DOGE'}${this.engine.wallet ? `\n${this.engine.wallet.address}` : ''}`; break; }
         case '/history': response = this.engine.store.orders().filter(o => o.mode === this.cfg.mode).slice(0, 10)
           .map(o => `${new Date(o.time).toISOString()} ${o.side} ${o.status}\n${o.signature || o.id}`).join('\n\n') || 'No trades yet.'; break;
         case '/reconcile': response = await this.engine.reconcile(); break;

@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 export const TOKENS = Object.freeze({
+  USDC: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6 },
   SOL: { mint: 'So11111111111111111111111111111111111111112', decimals: 9 },
 });
 
@@ -23,6 +24,9 @@ export function format(value, decimals) {
 }
 
 export function config(env = process.env, requireTelegram = true) {
+  const legacy = env.TRADING_PAIR === 'DOGE_SOL';
+  const base = legacy ? 'DOGE' : 'SOL', quote = legacy ? 'SOL' : 'USDC';
+  const quoteDecimals = legacy ? 9 : 6;
   const mode = env.TRADING_MODE || 'paper';
   if (!['paper', 'live'].includes(mode)) throw new Error('TRADING_MODE must be paper or live.');
   if (requireTelegram && (!/^\d+:[\w-]+$/.test(env.TELEGRAM_BOT_TOKEN || '') || !/^[1-9]\d*$/.test(env.TELEGRAM_OWNER_ID || '')))
@@ -49,18 +53,19 @@ export function config(env = process.env, requireTelegram = true) {
   if (dogeMint && (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(dogeMint) || dogeMint === TOKENS.SOL.mint))
     throw new Error('DOGE_MINT must be the verified wrapped DOGE mint on Solana.');
   return {
+    base, quote, quoteDecimals, pair: legacy ? 'DOGE_SOL' : 'SOL_USDC',
     mode, token: env.TELEGRAM_BOT_TOKEN, owner: env.TELEGRAM_OWNER_ID,
     apiKey: env.JUPITER_API_KEY || '', rpc, keyPath: env.WALLET_KEYPAIR_PATH,
     dataDir: resolve(env.DATA_DIR || './data'),
     slippage: integer('SLIPPAGE_BPS', 50, 1, 300),
     ttl: integer('QUOTE_TTL_SECONDS', 20, 5, 30) * 1000,
     tokens: { ...TOKENS, DOGE: { mint: dogeMint, decimals: dogeDecimals } },
-    pairReady: Boolean(dogeMint),
+    pairReady: !legacy || Boolean(dogeMint),
     encryptionKey: '', // Supplied by the authenticated owner at wallet unlock, never from .env.
-    maxTrade: amount('MAX_TRADE_SOL', '0.1', 9), maxDaily: amount('MAX_DAILY_SOL', '0.5', 9),
+    maxTrade: amount(legacy ? 'MAX_TRADE_SOL' : 'MAX_TRADE_USDC', legacy ? '0.1' : '1', quoteDecimals), maxDaily: amount(legacy ? 'MAX_DAILY_SOL' : 'MAX_DAILY_USDC', legacy ? '0.5' : '5', quoteDecimals),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),
-    paper: { DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
-    tradeSize: amount('TRADE_SIZE_SOL', '0.025', 9),
+    paper: { USDC: units(env.PAPER_USDC ?? '1', 6).toString(), DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
+    tradeSize: amount(legacy ? 'TRADE_SIZE_SOL' : 'TRADE_SIZE_USDC', legacy ? '0.025' : '0.25', quoteDecimals),
     sampleMs: integer('SAMPLE_SECONDS', 60, 15, 3600) * 1000,
     fast, slow,
     stopLoss: integer('STOP_LOSS_BPS', 300, 1, 9000),
