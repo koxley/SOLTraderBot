@@ -1,3 +1,5 @@
+> **Current release: SOL/USDC.** See [SOL-USDC.md](SOL-USDC.md) for current trading units, defaults, deposits, and migration behavior. The DOGE-specific setup below describes the legacy market.
+
 # SOL TRADER
 
 A self-hosted, single-owner Telegram Mini App for automatic SOL / wrapped DOGE spot trading on Solana. Deposit SOL; the strategy buys DOGE with SOL and sells DOGE back to SOL. The user controls **Start**, **Stop**, and **Close Open Positions**. There are no manual trade commands.
