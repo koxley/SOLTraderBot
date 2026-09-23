@@ -11,3 +11,5 @@
 .chart-legend{display:flex;gap:14px;align-items:center;font-size:10px;color:var(--muted);margin:2px 0 12px}
 
 .usdc{background:#2775ca;color:white;margin-left:-8px;font-size:23px;margin-right:12px}
+
+.balance-edit{background:none;border:0;padding:10px 0 0;color:var(--green);font-size:12px}.balance-edit:disabled{opacity:.45}#balance-form{margin-top:14px}#balance-form label{display:block;font-size:11px;color:var(--muted);margin-bottom:8px}#balance-amount{width:100%;min-width:0;background:#0b0e14;border:1px solid #384352;border-radius:7px;padding:10px;color:var(--text)}.balance-actions{display:flex;gap:8px;margin-top:8px}.balance-actions button{border:1px solid #384352;border-radius:6px;background:#1c232e;color:var(--text);padding:8px 12px;font-size:12px}#save-balance{background:var(--green);color:#17210f}#balance-error{color:var(--red);font-size:11px;overflow-wrap:anywhere}

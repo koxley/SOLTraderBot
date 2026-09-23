@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
 let recentSince = Date.now();
+let savingBalance = false;
 function fillSettings(settings) {
   for (const [key, value] of Object.entries(settings)) $(`setting-${key}`).value = value;
 }
@@ -51,6 +52,12 @@ function render(s) {
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
   if (!settingsDirty && !savingSettings) fillSettings(s.strategy);
   const locked = s.running || s.busy || s.closing || !!s.pending;
+  $('edit-balance').hidden = s.mode !== 'paper';
+  if (s.mode !== 'paper') $('balance-form').hidden = true;
+  $('edit-balance').disabled = locked || savingBalance || actionBusy;
+  $('balance-amount').disabled = locked || savingBalance || actionBusy;
+  $('save-balance').disabled = locked || savingBalance || actionBusy;
+  text('available-note', s.mode === 'paper' ? `SOL · resets to ${s.paperStartingBalance || '1'} on reopen/start` : 'SOL · actual wallet balance');
   $('strategy-fields').disabled = locked || savingSettings;
   $('save-strategy').disabled = locked || savingSettings;
   $('reset-strategy').disabled = savingSettings;
@@ -207,6 +214,20 @@ $('strategy-form').addEventListener('submit', async event => {
     text('settings-status', 'Strategy saved. Start the bot when ready.'); toast('Strategy saved. The bot remains stopped.');
   } catch (error) { text('settings-error', error.message); $('settings-error').hidden = false; }
   finally { savingSettings = false; if (state) render(state); }
+});
+$('edit-balance').addEventListener('click', () => {
+  $('balance-amount').value = state?.paperStartingBalance || '1';
+  $('balance-error').hidden = true; $('balance-form').hidden = false; $('balance-amount').focus();
+});
+$('cancel-balance').addEventListener('click', () => { $('balance-form').hidden = true; });
+$('balance-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (savingBalance || actionBusy) return;
+  savingBalance = true; actionBusy = true; $('balance-error').hidden = true; if (state) render(state);
+  try {
+    await api('paper/balance', 'POST', { amount: $('balance-amount').value });
+    $('balance-form').hidden = true; toast('Paper balance saved.');
+  } catch (error) { text('balance-error', error.message); $('balance-error').hidden = false; }
+  finally { savingBalance = false; actionBusy = false; await refresh(); await balances(); }
 });
 async function openApp() {
   try { await api('paper/reset-balance', 'POST'); } catch (error) { toast(error.message); }
