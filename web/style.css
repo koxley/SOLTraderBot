@@ -9,3 +9,5 @@
 .transaction-status{font-weight:600;color:#b6f36b}.trade-result{overflow-wrap:anywhere;min-width:0}.trade-info{min-width:0}.trade-info small{overflow-wrap:anywhere}
 
 .chart-legend{display:flex;gap:14px;align-items:center;font-size:10px;color:var(--muted);margin:2px 0 12px}
+
+.usdc{background:#2775ca;color:white;margin-left:-8px;font-size:23px;margin-right:12px}

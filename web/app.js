@@ -25,14 +25,14 @@ function render(s) {
   text('mode', s.mode.toUpperCase() + ' MODE');
   $('trading-mode').value = s.mode;
   $('trading-mode').disabled = actionBusy || s.running || s.busy || s.closing || !!s.pending;
-  $('price').replaceChildren(document.createTextNode(s.price === null ? '— ' : number(s.price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: 'SOL' }));
+  $('price').replaceChildren(document.createTextNode(s.price === null ? '— ' : number(s.price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: s.quote || 'USDC' }));
   text('sample-label', s.running ? 'Monitoring market' : 'Last observed quote');
   text('realized', (s.realized > 0 ? '+' : '') + number(s.realized, 6));
   $('realized').className = s.realized > 0 ? 'green' : s.realized < 0 ? 'red' : '';
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
   text('status-pill', s.closing ? 'Closing' : s.running ? 'Running' : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
-  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? 'Selling the bot’s DOGE position back to SOL. Trading will stay stopped.' : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
+  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? 'Selling the bot’s SOL position back to USDC. Trading will stay stopped.' : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
   text('warmup-text', `${s.warmup} / ${s.warmupRequired} samples`);
   $('warmup-progress').max = s.warmupRequired; $('warmup-progress').value = s.warmup;
   $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || !s.pairReady || (s.mode === 'live' && !s.wallet);
@@ -41,11 +41,11 @@ function render(s) {
   $('reconcile').hidden = !s.pending;
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
   text('position-tag', s.position ? '1 OPEN' : 'NO POSITION');
-  if (s.position) { text('position-amount', number(s.position.amount, 4)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
+  if (s.position) { text('position-amount', number(s.position.amount, 4)); text('position-cost', number(s.position.cost, 6) + ' USDC'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' USDC'); }
   text('ema', `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.strategy.interval);
-  text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
-  text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
-  text('mint-label', s.dogeMint ? 'Wrapped DOGE mint: ' + s.dogeMint : 'Wrapped DOGE mint: awaiting configuration');
+  text('trade-size', s.strategy.size + ' USDC'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
+  text('max-trade', s.strategy.maxTrade + ' USDC'); text('max-daily', s.strategy.maxDaily + ' USDC'); text('slippage', s.strategy.slippage + '%');
+  text('mint-label', 'USDC mint: ' + s.usdcMint);
   text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
   text('dashboard-trade-count', s.mode.toUpperCase());
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
@@ -67,7 +67,7 @@ function renderTrades(trades, target) {
     const row = document.createElement('div'); row.className = 'trade-item';
     const icon = document.createElement('div'); icon.className = 'trade-icon ' + trade.side; icon.textContent = trade.side === 'buy' ? '↗' : '↙';
     const info = document.createElement('div'); info.className = 'trade-info';
-    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought DOGE' : 'Sold DOGE';
+    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought SOL' : 'Sold SOL';
     if (trade.status !== 'filled') title.textContent = (trade.side === 'buy' ? 'Buy' : 'Sell') + ' · ' + trade.status;
     const status = document.createElement('small'); status.className = 'transaction-status';
     const labels = { filled: 'Completed', submitting: 'Submitting', unknown: 'Needs reconciliation', failed: 'Failed', expired: 'Expired' };
@@ -112,13 +112,13 @@ function drawChart(samples) {
     ctx.fillStyle = trade.side === 'buy' ? '#b6f36b' : '#f09391'; ctx.fill();
     ctx.strokeStyle = '#0b0e14'; ctx.lineWidth = 1.5; ctx.stroke();
   }
-  canvas.setAttribute('aria-label', `Observed DOGE price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. Details in Transactions.`);
+  canvas.setAttribute('aria-label', `Observed SOL price in USDC. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', time(samples[0].time)); text('chart-last', time(samples.at(-1).time));
 }
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
 }
-async function balances() { try { const b = await api('balance'); text('available', number(Number(b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
+async function balances() { try { const b = await api('balance'); text('available', number(Number(b.USDC) / 1e6, 5)); } catch { text('available', 'Unavailable'); } }
 async function wallet() {
   try {
     const w = await api('wallet');
@@ -129,10 +129,10 @@ async function wallet() {
     $('generate-key').hidden = w.exists;
     $('create-wallet').hidden = w.exists; $('wallet-balances').hidden = !w.exists || !!w.locked; $('deposit-card').hidden = !w.exists || !!w.locked;
     text('wallet-heading', w.exists ? 'Your trading wallet' : 'Create your Solana wallet');
-    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your dedicated Solana wallet is ready to receive SOL.' : 'A dedicated wallet for your bot. Deposit SOL, then let your strategy take it from there.');
+    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your wallet can receive USDC and SOL on Solana.' : 'A dedicated wallet for your bot. Deposit USDC for buys and SOL for network fees.');
     if (w.locked) { text('wallet-heading', 'Unlock your trading wallet'); text('wallet-description', 'Enter the original encryption key above. Your wallet and funds are preserved.'); }
     if (w.exists && !w.locked) {
-      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.DOGE) / 10 ** (state?.dogeDecimals ?? 8), 4) + ' DOGE' : 'You can still copy your receiving address.');
+      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.USDC) / 1e6, 6) + ' USDC' : 'You can still copy your receiving address.');
       $('wallet-address').value = w.address;
       $('deposit-qr').hidden = !!w.demo; if (w.qr) $('deposit-qr').src = w.qr;
       $('explorer').hidden = !!w.demo; if (!w.demo) $('explorer').href = 'https://solscan.io/account/' + w.address;
