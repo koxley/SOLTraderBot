@@ -56,7 +56,7 @@ export function config(env = process.env, requireTelegram = true) {
     ttl: integer('QUOTE_TTL_SECONDS', 20, 5, 30) * 1000,
     tokens: { ...TOKENS, DOGE: { mint: dogeMint, decimals: dogeDecimals } },
     pairReady: Boolean(dogeMint),
-    encryptionKey: env.WALLET_ENCRYPTION_KEY || '',
+    encryptionKey: '', // Supplied by the authenticated owner at wallet unlock, never from .env.
     maxTrade: amount('MAX_TRADE_SOL', '0.1', 9), maxDaily: amount('MAX_DAILY_SOL', '0.5', 9),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),
     paper: { DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },

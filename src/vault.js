@@ -7,9 +7,20 @@ import { Wallet } from './providers.js';
 
 export class Vault {
   constructor(cfg) { this.cfg = cfg; this.path = join(cfg.dataDir, 'wallet.encrypted.json'); }
+  exists() { return Boolean(this.cfg.keyPath) || existsSync(this.path); }
+  withKey(key, create = false) {
+    if (typeof key !== 'string' || !/^[a-fA-F0-9]{64}$/.test(key))
+      throw new UserError('Enter your 64-character hexadecimal wallet encryption key.');
+    this.cfg.encryptionKey = key;
+    try { return create ? this.create() : this.load(); }
+    catch (error) {
+      if (error instanceof UserError) throw error;
+      throw new UserError('Could not unlock wallet. Check the key and wallet backup.');
+    } finally { this.cfg.encryptionKey = ''; }
+  }
   key() {
     if (!/^[a-fA-F0-9]{64}$/.test(this.cfg.encryptionKey))
-      throw new UserError('Wallet creation needs WALLET_ENCRYPTION_KEY. Run the local setup command first.');
+      throw new UserError('Enter your wallet encryption key in Wallet.');
     return Buffer.from(this.cfg.encryptionKey, 'hex');
   }
   load() {

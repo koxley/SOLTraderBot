@@ -32,7 +32,7 @@ try {
     onCompromised: () => { engine?.stop(); process.exit(1); } });
   const store = new Store(join(cfg.dataDir, 'trader.sqlite'), cfg.paper);
   const vault = new Vault(cfg);
-  const wallet = vault.load();
+  const wallet = cfg.keyPath ? vault.load() : null;
   if (wallet) await wallet.verifyNetwork();
   await verifyMint(cfg);
   engine = new Engine(cfg, store, new Jupiter(cfg), wallet);

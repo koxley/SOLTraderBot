@@ -50,6 +50,9 @@ export class Engine {
     this.stopping = false;
     this.generation = 0;
     this.closing = false;
+    this.defaultStrategy = strategySettings(cfg);
+    // Restart in recovery mode when real exposure exists, even if the startup default is paper.
+    if (store.get('live:position') || store.orders().some(o => o.mode === 'live' && unresolved.has(o.status))) cfg.mode = 'live';
     const market = `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}`;
     const existingMarket = this.store.get('market');
     if (existingMarket && existingMarket !== market) throw new Error('Token configuration changed. Use a separate DATA_DIR for a different token.');
@@ -72,6 +75,21 @@ export class Engine {
     Object.assign(this.cfg, next);
   }
   key(name) { return `${this.cfg.mode}:${name}`; }
+  switchMode(mode, acknowledged = false) {
+    if (!['paper', 'live'].includes(mode)) throw new UserError('Choose paper or live mode.');
+    if (mode === this.cfg.mode) return;
+    if (this.active() || this.busy || this.closing || this.store.orders().some(o => unresolved.has(o.status)))
+      throw new UserError('Stop the bot and reconcile unsettled trades before switching mode.');
+    if (this.cfg.mode === 'live' && this.position())
+      throw new UserError('Close your live position before switching to paper mode.');
+    if (mode === 'live' && (!acknowledged || !this.wallet))
+      throw new UserError('Unlock your wallet and acknowledge real-fund trading before selecting live.');
+    const settings = validateStrategy(this.store.get(`${mode}:strategy`) || this.defaultStrategy);
+    if (mode === 'live') this.bindWallet(this.wallet.address);
+    this.stop();
+    Object.assign(this.cfg, settings, { mode });
+    this.store.set('lastError', '');
+  }
   bindWallet(address) {
     const bound = this.store.get('walletAddress');
     if (bound && bound !== address) throw new Error('Wallet changed. Use a separate DATA_DIR.');
@@ -210,6 +228,7 @@ export class Engine {
     });
   }
   async reconcile() {
+    if (this.pending().length && !this.wallet) throw new UserError('Unlock your wallet before reconciling trades.');
     const results = [];
     for (const order of this.pending()) {
       const status = await this.wallet.status(order.signature);

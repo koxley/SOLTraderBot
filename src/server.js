@@ -56,7 +56,7 @@ export function snapshot(engine) {
 
 export function appServer(engine, { token, owner, demo = false, publicUrl = '', vault = null }) {
   const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
-  let lastAction = 0;
+  let lastAction = 0, walletBusy = false;
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -77,11 +77,12 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       if (req.method === 'GET' && path === '/api/state') return reply(200, { ...snapshot(engine), demo });
       if (req.method === 'GET' && path === '/api/balance') return reply(200, await engine.balances());
       if (req.method === 'GET' && path === '/api/wallet') {
-        if (!engine.wallet) return reply(200, { exists: false, demo });
+        if (!engine.wallet) return reply(200, { exists: vault?.exists() || false, locked: vault?.exists() || false, demo });
         if (demo) return reply(200, { exists: true, demo: true, address: 'Preview wallet — no real deposits', balance: { SOL: '0', DOGE: '0' } });
         const address = engine.wallet.address;
-        const balance = await engine.wallet.balances();
-        return reply(200, { exists: true, address, balance, network: 'Solana mainnet', uri: 'solana:' + address,
+        let balance = null;
+        try { balance = await engine.wallet.balances(); } catch { /* The deposit address remains available during RPC outages. */ }
+        return reply(200, { exists: true, locked: false, address, balance, network: 'Solana mainnet', uri: 'solana:' + address,
           qr: await QRCode.toDataURL('solana:' + address, { width: 300, margin: 2, errorCorrectionLevel: 'M' }) });
       }
       if (req.method === 'POST') {
@@ -92,17 +93,32 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
         if (path !== '/api/stop' && Date.now() - lastAction < 750) return reply(429, { error: 'Please wait a moment.' });
         lastAction = Date.now();
         switch (path) {
+          case '/api/mode': {
+            const input = await readSettings(req);
+            if (demo && input.mode === 'live') throw new UserError('Live trading is disabled in this simulated preview. Open your deployed Telegram app.');
+            engine.switchMode(input.mode, input.acknowledged === true);
+            break;
+          }
           case '/api/strategy': engine.configure(await readSettings(req)); break;
+          case '/api/wallet/unlock':
           case '/api/wallet/create': {
             if (demo) {
               engine.wallet ||= { address: 'Preview wallet', balances: async () => ({ SOL: '0', DOGE: '0' }) };
               return reply(200, { message: 'Preview wallet created. Deposits are disabled in the demo.' });
             }
             if (!vault) throw new UserError('Wallet service unavailable.');
-            if (engine.wallet) throw new UserError('A wallet already exists.');
-            engine.wallet = vault.create();
-            engine.bindWallet(engine.wallet.address);
-            return reply(200, { address: engine.wallet.address });
+            if (engine.wallet || walletBusy) throw new UserError('Wallet already unlocked or an operation is in progress.');
+            walletBusy = true;
+            try {
+              const input = await readSettings(req);
+              const wallet = vault.withKey(input.key, path === '/api/wallet/create');
+              input.key = '';
+              if (!wallet) throw new UserError('No wallet exists. Create one first.');
+              await wallet.verifyNetwork();
+              engine.bindWallet(wallet.address);
+              engine.wallet = wallet;
+              return reply(200, { address: wallet.address });
+            } finally { walletBusy = false; }
           }
           case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(); break;
