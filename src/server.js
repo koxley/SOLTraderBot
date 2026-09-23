@@ -48,6 +48,8 @@ export function snapshot(engine) {
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens.DOGE.decimals))) / 1e9 : null } : null,
     realized: Number(realized) / 1e9,
     strategy: strategySettings(cfg),
+    chartTrades: orders.filter(o => o.status === 'filled' && samples.length && o.time >= samples[0].time)
+      .map(o => ({ time: o.time, side: o.side, status: o.status })),
     tradeCount: orders.length,
     trades: orders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
       time: o.time, input: o.input, output: o.output, amount: format(o.actualInput || o.amount, cfg.tokens[o.input].decimals),
