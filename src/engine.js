@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { UserError, format } from './config.js';
+import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
@@ -106,9 +106,19 @@ export class Engine {
   }
   position() { return this.store.get(this.key('position')) || null; }
   pending() { return this.orders().filter(o => o.mode === this.cfg.mode && unresolved.has(o.status)); }
+  setPaperBalance(amount) {
+    if (this.cfg.mode !== 'paper') throw new UserError('Live balances come from the wallet and cannot be edited.');
+    if (this.active() || this.busy || this.closing || this.pending().length)
+      throw new UserError('Stop the bot and settle pending trades before changing the paper balance.');
+    const value = units(amount, this.cfg.quoteDecimals).toString();
+    this.store.atomic(() => {
+      this.store.set(this.key('startingBalance'), value);
+      this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: value });
+    });
+  }
   resetPaperSOL() {
     if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
-    this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), ...(this.cfg.pair === 'SOL_USDC' ? { USDC: '1000000' } : { SOL: '1000000000' }) });
+    this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: this.store.get(this.key('startingBalance')) ?? (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
   }
   start() {
     if (!this.cfg.pairReady) throw new UserError('Trading pair is not configured.');

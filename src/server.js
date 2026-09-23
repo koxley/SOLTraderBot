@@ -50,6 +50,7 @@ export function snapshot(engine) {
     strategy: strategySettings(cfg),
     chartTrades: orders.filter(o => o.status === 'filled' && samples.length && o.time >= samples[0].time)
       .map(o => ({ time: o.time, side: o.side, status: o.status })),
+    paperStartingBalance: format(engine.store.get(engine.key('startingBalance')) ?? (10n ** BigInt(cfg.quoteDecimals)).toString(), cfg.quoteDecimals),
     tradeCount: orders.length,
     trades: orders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
       time: o.time, input: o.input, output: o.output, amount: format(o.actualInput || o.amount, cfg.tokens[o.input].decimals),
@@ -123,6 +124,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
               return reply(200, { address: wallet.address });
             } finally { walletBusy = false; }
           }
+          case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
           case '/api/paper/reset-balance': engine.resetPaperSOL(); break;
           case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(); break;
