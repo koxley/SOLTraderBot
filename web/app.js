@@ -3,6 +3,7 @@ tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
+let recentSince = Date.now();
 function fillSettings(settings) {
   for (const [key, value] of Object.entries(settings)) $(`setting-${key}`).value = value;
 }
@@ -54,14 +55,14 @@ function render(s) {
   $('save-strategy').disabled = locked || savingSettings;
   $('reset-strategy').disabled = savingSettings;
   $('settings-lock').hidden = !locked;
-  renderTrades(s.trades, 'trade-list'); renderTrades(s.trades.slice(0, 5), 'dashboard-trade-list'); drawChart(s.samples);
+  renderTrades(s.trades, 'trade-list'); renderTrades(s.trades.filter(trade => trade.time >= recentSince).slice(0, 5), 'dashboard-trade-list'); drawChart(s.samples);
 }
 function renderTrades(trades, target) {
   const list = $(target);
   const revision = JSON.stringify(trades);
   if (list.dataset.revision === revision) return;
   list.dataset.revision = revision; list.replaceChildren();
-  if (!trades.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = 'No trades yet. Start the bot to begin building your trade history.'; list.append(p); }
+  if (!trades.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = target === 'dashboard-trade-list' ? 'No new transactions this session. Completed buys and sells will appear here.' : 'No trades yet. Start the bot to begin building your trade history.'; list.append(p); }
   for (const trade of trades) {
     const row = document.createElement('div'); row.className = 'trade-item';
     const icon = document.createElement('div'); icon.className = 'trade-icon ' + trade.side; icon.textContent = trade.side === 'buy' ? '↗' : '↙';
@@ -143,7 +144,9 @@ async function wallet() {
 async function action(name) {
   if (actionBusy) return; actionBusy = true; if (state) render(state);
   try {
-    const response = await api(name, 'POST'); tg?.HapticFeedback?.notificationOccurred('success');
+    const response = await api(name, 'POST');
+    if (name === 'start') recentSince = Date.now();
+    tg?.HapticFeedback?.notificationOccurred('success');
     toast(response.message || ({ start: 'Autopilot started.', stop: 'Bot stopped. Your position is kept.', close: 'Closing requested. The bot will remain stopped.', 'wallet/create': 'Wallet created. You can now deposit SOL.' })[name] || 'Done.');
     if (name === 'wallet/create') await wallet();
   } catch (error) { toast(error.message); }
