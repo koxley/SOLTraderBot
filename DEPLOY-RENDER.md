@@ -18,7 +18,7 @@ Enter secrets into Render's environment fields:
 
 - `TELEGRAM_BOT_TOKEN`: your BotFather token.
 - `TELEGRAM_OWNER_ID`: your numeric Telegram user ID.
-- `WALLET_ENCRYPTION_KEY`: the 64-character hexadecimal value already generated in your private local `.env`. Preserve and back up this exact key if an encrypted wallet already exists.
+- Wallet encryption key: enter this in the authenticated Wallet screen after deployment, not in Render environment settings. Existing wallets require their original key; preserve its backup.
 - `JUPITER_API_KEY`: your Jupiter key, if available; keyless access is supported at lower limits.
 
 Send a message to your Telegram bot before deploying so it can send its startup message. Keep the service in paper mode. Stop any other instance using the same bot token. If migrating a real wallet, stop its strategy and migrate the encrypted wallet and SQLite state together before trading on the new host. A blank new persistent disk does not contain an existing wallet or position.

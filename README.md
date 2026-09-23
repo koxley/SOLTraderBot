@@ -18,7 +18,7 @@ Open **http://127.0.0.1:3001**. The isolated preview has simulated prices, a sam
 ## Connect to Telegram
 
 1. Create a Telegram bot with [@BotFather](https://t.me/BotFather). Send it `/start` once so it can message you.
-2. Run `pnpm run setup`. This creates a private `.env` and generates a random 32-byte wallet encryption key. It never overwrites an existing `.env`.
+2. Run `pnpm run setup`. This creates a private `.env` without generating or storing a wallet key. It never overwrites an existing `.env`.
 3. Edit `.env` locally: set `TELEGRAM_BOT_TOKEN`, your numeric `TELEGRAM_OWNER_ID`, and `PUBLIC_APP_URL` to your HTTPS deployment origin. Do not paste keys into a chat. Use the user's ID from an incoming Bot API update, not a username or group ID.
 4. Host this Node process behind HTTPS, forwarding to port 3000. Telegram Mini Apps require a public HTTPS URL. Use a persistent disk for `DATA_DIR`, one process, and no webhook; this bot uses long polling. Configure `HOST=0.0.0.0` only when your hosting platform or container requires it.
 5. Run `pnpm start`. The bot registers commands and an **Open SOL TRADER** menu button for your account. Open `/app` in a private Telegram conversation with your bot.
@@ -29,11 +29,11 @@ The included Dockerfile builds the app. Supply `.env` via your platform's secret
 
 ## Create and fund a wallet
 
-Open **Wallet → Create wallet**. A new Solana keypair is generated on the server and encrypted with AES-256-GCM using `WALLET_ENCRYPTION_KEY`. The server retains signing access so it can trade unattended; this is an operator-controlled hot wallet, not a browser-only wallet.
+Open **Wallet**, generate or enter your encryption key, save a backup, and select **Create wallet**. A new Solana keypair is generated on the server and encrypted with AES-256-GCM using the key you enter in Wallet. The server retains signing access so it can trade unattended; this is an operator-controlled hot wallet, not a browser-only wallet.
 
 The app displays the receiving address, Solana Pay QR code, copy button, confirmed on-chain SOL/DOGE balances, and a Solscan link. Transfer SOL to that address from an existing Solana wallet or withdraw SOL from an exchange over **Solana mainnet**. **Check deposit** refreshes balances; the screen also refreshes periodically. Funding is a normal on-chain transfer, not a card/fiat purchase. Native DOGE must not be sent to this Solana address.
 
-Before funding, back up `data/wallet.encrypted.json`, the database, and `WALLET_ENCRYPTION_KEY` separately. On Windows, restrict access to the app directory and `.env` to the service account; POSIX file mode flags alone do not configure Windows ACLs. Loss of both the running key and a recoverable backup means loss of access to funds. To recover into another wallet, explicitly export a local Solana keypair file:
+Before funding, back up `data/wallet.encrypted.json`, the database, and your encryption key separately. On Windows, restrict access to the app directory and `.env` to the service account; POSIX file mode flags alone do not configure Windows ACLs. Loss of both the running key and a recoverable backup means loss of access to funds. To recover into another wallet, explicitly export a local Solana keypair file:
 
 ```sh
 pnpm export-wallet /secure/location/recovery.key.json
@@ -67,7 +67,7 @@ TRADING_MODE=live
 LIVE_TRADING_ACK=I_UNDERSTAND_REAL_FUNDS
 ```
 
-Open Telegram and start the bot. Live trading requires a funded wallet and a working mainnet RPC. Defaults use a 0.025 SOL entry size, 0.1 SOL maximum entry, 0.5 SOL daily gross turnover threshold for new entries, 0.02 SOL reserve on buys, 0.01 SOL maximum network/rent estimate, and 50 bps slippage. Entry limits do not block exits. Exit trades still require sufficient gas and acceptable network fees. Daily gross turnover counts buys and sells; new entries are blocked when the threshold would be exceeded. The day resets at midnight UTC. Configure strategy values in the authenticated Strategy tab while stopped. Saved settings persist separately for paper and live modes and take precedence over `.env` defaults. Changes to EMA periods or sampling interval restart warm-up. Exit thresholds apply to the existing bot position when trading resumes. Wallet, token, and live-mode settings remain in `.env`.
+Open Telegram and start the bot. Live trading requires a funded wallet and a working mainnet RPC. Defaults use a 0.025 SOL entry size, 0.1 SOL maximum entry, 0.5 SOL daily gross turnover threshold for new entries, 0.02 SOL reserve on buys, 0.01 SOL maximum network/rent estimate, and 50 bps slippage. Entry limits do not block exits. Exit trades still require sufficient gas and acceptable network fees. Daily gross turnover counts buys and sells; new entries are blocked when the threshold would be exceeded. The day resets at midnight UTC. Configure strategy values in the authenticated Strategy tab while stopped. Saved settings persist separately for paper and live modes and take precedence over `.env` defaults. Changes to EMA periods or sampling interval restart warm-up. Exit thresholds apply to the existing bot position when trading resumes. Token and startup defaults remain in `.env`. Select paper/live mode in the Dashboard and enter the wallet key in Wallet.
 
 Live swaps use Jupiter Swap V2 `/order` and `/execute`, exclude RFQ routes with extra signers, verify quote mint/amount/slippage, enforce fee/reserve limits, validate fee payer, simulate wallet balance changes, and then sign locally. Jupiter and the configured RPC are trusted external services; use a dedicated wallet. A quote API key is optional for low-rate usage and recommended for reliable operation. Responses and logs never include private keys or raw credential-bearing provider errors.
 
@@ -87,3 +87,11 @@ The lockfile overrides the Solana SDK's transitive `jayson` dependency to 5.0.0 
 Live funded swaps, actual deposits, Telegram launch, and public deployment require your credentials/infrastructure and have not been executed here. The local interactive preview and automated tests are runnable without those credentials.
 
 API references: [Telegram Mini Apps and initData validation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app), [Telegram Bot API](https://core.telegram.org/bots/api), [Jupiter Order & Execute](https://developers.jup.ag/docs/swap/order-and-execute).
+
+## Wallet unlock and mode selection
+
+The encryption key is requested in the authenticated Wallet screen and is never read from `.env`. It is discarded after encrypting/decrypting; the unlocked signing wallet stays in server memory until restart. After restart, re-enter the original key before live trading. Existing encrypted wallets remain compatible: save your old `.env` key privately and use it to unlock, rather than generating a replacement key. Do not remove your only key backup.
+
+Use the Dashboard Paper / Live selector while stopped. Enabling live requires an unlocked wallet and an explicit real-funds acknowledgement. Switching does not start trading. Strategies, balances, positions, and history remain separate per mode. Close live positions and reconcile unknown transactions before switching away. Startup follows TRADING_MODE (paper by default), except that existing live positions or unsettled live trades force stopped live recovery mode. The runtime selection does not rewrite configuration.
+
+Wallet shows the bot wallet ID, copy button, and Solana Pay QR code after unlock, including in live mode. Send SOL to that address over **Solana mainnet** from MetaMask or another Solana wallet. An RPC outage may hide balances but does not hide the receiving address. The local demo blocks real live mode and deposits.

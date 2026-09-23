@@ -1,4 +1,4 @@
-# Put this file and the app's package.json at the root of a dedicated private repository
+# Put this file and the app's package.json at the root of a dedicated private repository.
 services:
   - type: web
     name: sol-trader
@@ -10,6 +10,7 @@ services:
     buildCommand: npx --yes pnpm@11.19.0 install --frozen-lockfile --prod
     startCommand: node src/main.js
     healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 90
     domains:
       - soltraderbot.com
     disk:
@@ -36,8 +37,6 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_OWNER_ID
-        sync: false
-      - key: WALLET_ENCRYPTION_KEY
         sync: false
       - key: JUPITER_API_KEY
         sync: false
