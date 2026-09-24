@@ -3,7 +3,7 @@ import { warmup, alternativeSignal } from './indicators.js';
 import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
-import { assetConfig, resolveAsset } from './assets.js';
+import { assetConfig, resolveAsset, selectedPreset } from './assets.js';
 import { stopLevel, advanceStop } from './risk.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
@@ -128,7 +128,10 @@ export class Engine {
     const generation = this.generation;
     this.busy = true;
     try {
+      const preset = selectedPreset(input);
       const resolved = await resolve(input, this.cfg);
+      if (resolved.mint !== preset.mint || resolved.symbol !== preset.symbol || resolved.decimals !== preset.decimals)
+        throw new UserError('Asset validation did not match the selected preset.');
       const asset = this.store.get(`asset:${resolved.mint}`) || resolved;
       const next = assetConfig(this.cfg, asset);
       if (generation !== this.generation || this.closing) throw new UserError('Asset change cancelled. Try again while stopped.');

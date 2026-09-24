@@ -2,8 +2,66 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { TOKENS, UserError } from './config.js';
 import { Jupiter } from './providers.js';
 
-export const ASSETS = Object.entries(TOKENS).filter(([symbol]) => symbol !== 'SOL')
-  .map(([symbol, token]) => ({ symbol, ...token }));
+// Fixed Jupiter organic-score snapshot, 2026-09-25. See TRADING_ASSETS.md.
+export const ASSETS = [
+  {
+    "symbol": "USDC",
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "decimals": 6
+  },
+  {
+    "symbol": "USDT",
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "decimals": 6
+  },
+  {
+    "symbol": "JUP",
+    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "decimals": 6
+  },
+  {
+    "symbol": "RAY",
+    "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "decimals": 6
+  },
+  {
+    "symbol": "ZEC",
+    "mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+    "decimals": 8
+  },
+  {
+    "symbol": "STONK",
+    "mint": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx",
+    "decimals": 9
+  },
+  {
+    "symbol": "JitoSOL",
+    "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+    "decimals": 9
+  },
+  {
+    "symbol": "MET",
+    "mint": "METvsvVRapdj9cFLzq4Tr43xK4tAjQfwX76z3n6mWQL",
+    "decimals": 6
+  },
+  {
+    "symbol": "USELESS",
+    "mint": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
+    "decimals": 6
+  },
+  {
+    "symbol": "PENGU",
+    "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+    "decimals": 6
+  }
+];
+
+export function selectedPreset(input) {
+  const preset = ASSETS.find(a => a.symbol === input?.preset);
+  if (!preset || input.symbol !== undefined || input.mint !== undefined)
+    throw new UserError('Choose one of the ten supported trading pairs. Custom tokens are no longer supported.');
+  return { ...preset };
+}
 
 export function assetConfig(cfg, asset) {
   if (!asset || typeof asset.symbol !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,11}$/.test(asset.symbol) ||
@@ -25,13 +83,8 @@ export function assetConfig(cfg, asset) {
 
 // Mint metadata comes from the chain; display symbols never identify the traded asset.
 export async function resolveAsset(input, cfg) {
-  if (!input || typeof input !== 'object' || (!ASSETS.some(a => a.symbol === input.preset) &&
-      (input.preset !== 'custom' || typeof input.symbol !== 'string' || typeof input.mint !== 'string')))
-    throw new UserError('Choose a preset or enter a custom token symbol and Solana mint.');
-  const preset = ASSETS.find(a => a.symbol === input?.preset);
-  const symbol = preset?.symbol || input?.symbol?.trim();
-  const mint = preset?.mint || input?.mint?.trim();
-  assetConfig(cfg, { symbol, mint, decimals: preset?.decimals ?? 0 });
+  const { symbol, mint, decimals } = selectedPreset(input);
+  assetConfig(cfg, { symbol, mint, decimals });
   let address;
   try { address = new PublicKey(mint); } catch { throw new UserError('Invalid Solana mint address.'); }
   const connection = new Connection(cfg.rpc, { commitment: 'confirmed', disableRetryOnRateLimit: true,
@@ -44,7 +97,7 @@ export async function resolveAsset(input, cfg) {
   const candidate = { ...cfg, ...assetConfig(cfg, asset) };
   const provider = new Jupiter(candidate);
   // Read-only quotes verify a route in both directions; no wallet or signing is involved.
-  for (const [from, to, amount] of [['SOL', symbol, cfg.tradeSize], [symbol, 'SOL', (10n ** BigInt(asset.decimals)).toString()]]) {
+  for (const [from, to, amount] of [['SOL', symbol, '10000000'], [symbol, 'SOL', (10n ** BigInt(asset.decimals)).toString()]]) {
     const q = await provider.quote(from, to, amount);
     if (q.error || q.errorCode || q.inputMint !== candidate.tokens[from].mint || q.outputMint !== candidate.tokens[to].mint ||
         q.inAmount !== amount || !/^\d+$/.test(q.outAmount || '') || BigInt(q.outAmount) <= 0n)
