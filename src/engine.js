@@ -87,6 +87,7 @@ export class Engine {
     const saved = this.store.get(this.key('strategy'));
     if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair, true));
     else this.cfg.tradePercentBps = Math.max(1, Math.min(10000, Math.round(this.defaultStrategy.sizePercent * 100)));
+    this.finishSessionReset();
   }
   configure(settings) {
     if (this.busy || this.closing || this.pending().length)
@@ -203,11 +204,30 @@ export class Engine {
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
     if (this.market().executable) this.resetPaperSOL();
     this.stopping = false;
+    this.store.set(this.key('chartReset'), false);
     this.store.set('running', true);
     this.store.set('errors', 0);
     this.store.set('lastError', '');
   }
-  stop() { this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false); }
+  stop(resetSession = false) {
+    this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false);
+    if (resetSession) { this.store.set(this.key('resetRequested'), true); this.finishSessionReset(); }
+  }
+  finishSessionReset() {
+    if (!this.store.get(this.key('resetRequested'))) return;
+    const orders = this.orders().filter(o => o.mode === this.cfg.mode);
+    this.store.atomic(() => {
+      // Keep the accounting ledger for open-buy relationships, reconciliation and daily limits.
+      this.store.set(this.key('hiddenHistory'), orders.map(o => o.id));
+      this.store.set(this.key('realizedBaseline'), orders.reduce((n,o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n).toString());
+      this.store.set(this.key('samples'), []); this.store.set(this.key('chartSamples'), []);
+      this.store.set(this.key('tracker'), null); this.store.set(this.key('chartReset'), true);
+      if (!this.busy && !this.pending().length) {
+        if (this.cfg.mode === 'paper') this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
+        this.store.set(this.key('resetRequested'), false);
+      }
+    });
+  }
   requestClose() { if (!this.market().executable) throw new UserError('Single-coin tracking has no position to close.'); this.stop(); this.closing = true; }
   active() { return !this.stopping && this.store.get('running') === true; }
   async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', [this.cfg.splToken]: '0' }; }
@@ -258,7 +278,7 @@ export class Engine {
       this.store.set('lastError', error instanceof UserError ? error.message : 'Provider or storage error. Check connectivity.');
       // Never relay raw RPC errors: they may contain private provider URLs.
       return `${this.active() ? 'Temporary failure' : 'Bot stopped'}: ${error instanceof UserError ? error.message : 'Provider or storage error; inspect connectivity and /status.'}`;
-    } finally { this.busy = false; }
+    } finally { this.busy = false; this.finishSessionReset(); }
   }
   async trade({ side, reason, lotId }, forceExit = false) {
     if (!this.market().executable) throw new UserError('Single-coin tracking never submits trades.');
@@ -370,6 +390,7 @@ export class Engine {
         else results.push('Transaction status changed. Reconcile again before restarting.');
       } else results.push(`${order.id.slice(0, 8)} unresolved; bot remains stopped. Signature: ${order.signature}`);
     }
+    this.finishSessionReset();
     return results.join('\n') || 'No unsettled trades.';
   }
   describe(o) {

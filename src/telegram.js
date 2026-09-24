@@ -38,11 +38,11 @@ export class Telegram {
       let response;
       switch (command) {
         case '/start': this.engine.start(); response = `Automatic ${this.cfg.mode.toUpperCase()} trading started. /status shows warm-up progress. /stop halts trading; /close also sells the bot position.`; break;
-        case '/stop': this.engine.stop(); response = 'Stopped. Position kept. Any already submitted transaction may still complete.'; break;
+        case '/stop': this.engine.stop(true); response = 'Stopped. Position kept. Any already submitted transaction may still complete.'; break;
         case '/close': this.engine.requestClose(); response = 'Strategy stopped. Closing the bot position as soon as any current operation settles.'; break;
         case '/status': response = this.engine.status(); break;
         case '/balance': { const b = await this.engine.balances(); response = `${this.cfg.mode.toUpperCase()} balances\n${format(b.SOL, 9)} SOL\n${format(b[this.cfg.splToken], this.cfg.tokens[this.cfg.splToken].decimals)} ${this.cfg.splToken}${this.engine.wallet ? `\n${this.engine.wallet.address}` : ''}`; break; }
-        case '/history': response = this.engine.store.orders().filter(o => o.mode === this.cfg.mode).slice(0, 10)
+        case '/history': response = this.engine.orders().filter(o => o.mode === this.cfg.mode && !(this.engine.store.get(this.engine.key('hiddenHistory')) || []).includes(o.id)).slice(0, 10)
           .map(o => `${new Date(o.time).toISOString()} ${o.side} ${o.status}\n${o.signature || o.id}`).join('\n\n') || 'No trades yet.'; break;
         case '/reconcile': response = await this.engine.reconcile(); break;
         case '/app':

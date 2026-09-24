@@ -45,10 +45,12 @@ export function snapshot(engine) {
   const samples = engine.store.get(engine.key('samples')) || [];
   const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
+  const hiddenHistory = new Set(engine.store.get(engine.key('hiddenHistory')) || []);
+  const visibleOrders = orders.filter(o => !hiddenHistory.has(o.id));
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n) -
-    (cfg.mode === 'paper' ? BigInt(engine.store.get(engine.key('realizedBaseline')) || '0') : 0n);
+    BigInt(engine.store.get(engine.key('realizedBaseline')) || '0');
   const sellLinks = new Map();
-  for (const sell of orders.filter(o => o.status === 'filled' && o.side === 'sell')) {
+  for (const sell of visibleOrders.filter(o => o.status === 'filled' && o.side === 'sell')) {
     for (const allocation of sell.buyAllocations || []) {
       const links = sellLinks.get(allocation.buyId) || [];
       links.push({ sellId: sell.id, time: sell.time, ...allocation }); sellLinks.set(allocation.buyId, links);
@@ -63,7 +65,7 @@ export function snapshot(engine) {
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
     assetMint: cfg.tokens[market.asset].mint, tracker: engine.store.get(engine.key('tracker')) || null,
     price: last ? Number(last.price) / 10 ** referenceDecimals : null,
-    chartInterval: 15,
+    chartInterval: 15, chartReset: Boolean(engine.store.get(engine.key('chartReset'))),
     samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** referenceDecimals })),
     warmup: Math.min(samples.length, warmup(cfg)), warmupRequired: warmup(cfg),
     position: market.executable && p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
@@ -72,11 +74,11 @@ export function snapshot(engine) {
       amount: format(lot.amount, cfg.tokens[cfg.base].decimals), cost: format(lot.cost, cfg.quoteDecimals) })),
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),
-    chartTrades: orders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)
+    chartTrades: visibleOrders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)
       .map(o => ({ time: o.time, side: o.side, status: o.status })),
     paperStartingBalance: format(engine.store.get(engine.key('startingBalance')) ?? (10n ** BigInt(cfg.quoteDecimals)).toString(), cfg.quoteDecimals),
-    tradeCount: orders.length,
-    trades: orders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
+    tradeCount: visibleOrders.length,
+    trades: visibleOrders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
       buyAllocations: (o.buyAllocations || []).map(allocationView),
       sellAllocations: (sellLinks.get(o.id) || []).map(allocationView),
       relationshipKnown: o.side === 'buy' || Array.isArray(o.buyAllocations),
@@ -104,7 +106,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       const chart = engine.store.get(chartKey) || [];
       // Display sampling is independent of trading, EMA warm-up and strategy intervals.
       const bucket = Math.floor(now / 15000) * 15000;
-      if (!chart.length || bucket > chart.at(-1).time) {
+      if (!engine.store.get(engine.key('chartReset')) && (!chart.length || bucket > chart.at(-1).time)) {
         chart.push({ time: bucket, price: q.outAmount });
         engine.store.set(chartKey, chart.slice(-600));
       }
@@ -190,7 +192,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
           case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
           case '/api/paper/reset-balance': engine.resetPaperSession(); break;
           case '/api/start': engine.start(); break;
-          case '/api/stop': engine.stop(); break;
+          case '/api/stop': engine.stop(true); lastPrice = null; break;
           case '/api/close': engine.requestClose(); break;
           case '/api/reconcile': return reply(200, { message: await engine.reconcile() });
           default: return reply(404, { error: 'Unknown action.' });
