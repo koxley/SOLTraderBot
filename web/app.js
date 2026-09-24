@@ -52,8 +52,12 @@ function render(s) {
   text('position-help', tracking ? `${market.asset} is observed against ${market.reference}. Signals are informational and create no position.` : `The bot buys ${s.base} with SOL when its entry signal fires.`);
   text('deposit-title', `Deposit SOL or ${s.base}`);
   if (!assetDirty && !savingAsset) {
-    $('asset-preset').value = s.assets?.find(a => a.mint === s.tokenMint)?.symbol || 'custom';
-    $('asset-symbol').value = s.base; $('asset-mint').value = s.tokenMint;
+    const select = $('asset-preset');
+    select.replaceChildren(new Option('Choose a supported pair', ''));
+    for (const asset of s.assets || []) select.add(new Option(`SOL / ${asset.symbol}`, asset.symbol));
+    select.value = s.assets?.find(a => a.mint === s.tokenMint)?.symbol || '';
+    if (!select.value) select.options[0].text = `Current SOL / ${s.base} is a legacy asset — choose a supported pair`;
+
     updateAssetFields();
   }
   $('asset-fields').disabled = savingAsset || actionBusy || s.running || s.busy || s.closing || !!s.pending || !!s.position;
@@ -350,15 +354,14 @@ setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 setInterval(() => { if (!document.hidden) { balances(); if (activeView === 'wallet-view') wallet(); } }, 15000);
 
 function updateAssetFields() {
-  const custom = $('asset-preset').value === 'custom';
-  $('asset-custom').hidden = !custom;
-  $('asset-symbol').required = custom; $('asset-mint').required = custom;
+  const asset = state?.assets?.find(a => a.symbol === $('asset-preset').value);
+  text('asset-selected-mint', asset ? `${asset.symbol} mint: ${asset.mint}` : 'Select a pair to see its built-in mint.');
 }
 $('asset-preset').addEventListener('change', updateAssetFields);
 $('asset-form').addEventListener('input', () => { assetDirty = true; });
 $('asset-form').addEventListener('submit', async event => {
   event.preventDefault(); if (savingAsset || actionBusy) return;
-  const input = { preset: $('asset-preset').value, symbol: $('asset-symbol').value, mint: $('asset-mint').value };
+  const input = { preset: $('asset-preset').value };
   savingAsset = true; actionBusy = true; $('asset-error').hidden = true;
   text('asset-status', 'Checking mint and buy/sell routes…'); if (state) render(state);
   try {
