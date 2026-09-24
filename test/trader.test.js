@@ -31,7 +31,7 @@ test('strategy settings persist, update runtime and reset sampling only when nee
 });
 test('strategy rejects invalid settings, allows running edits and blocks in-flight changes', t => {
   const f = fixture(t), settings = strategySettings(f.cfg);
-  for (const patch of [{ fast: 20, slow: 5 }, { sizePercent: '101' }, { slippage: '3.01' }, { interval: '1' }, { stopLoss: '0' }, { sizePercent: '1e-4' }, { takeProfit: '0.001' }, { maxDaily: '0.001' }, { token: 'secret' }])
+  for (const patch of [{ fast: 20, slow: 5 }, { sizePercent: '101' }, { slippage: '3.01' }, { interval: '1' }, { sizePercent: '1e-4' }, { maxDaily: '0.001' }, { token: 'secret' }])
     assert.throws(() => f.engine.configure({ ...settings, ...patch }));
   assert.deepEqual(strategySettings(f.cfg), settings);
   assert.equal(f.store.get(f.engine.key('strategy')), undefined);
@@ -195,21 +195,21 @@ test('live execution requires explicit local acknowledgement; invalid strategy r
   assert.throws(() => config({ TRADING_MODE: 'live' }, false));
   assert.throws(() => config({ EMA_FAST: '12', EMA_SLOW: '5' }, false));
 });
-test('EMA buy crossover and stop-loss/take-profit exits', () => {
+test('EMA buy crossover and no threshold exits before warm-up', () => {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3' }, false);
   const series = [100, 100, 100, 130].map(price => ({ price: String(price * 10000) }));
   assert.equal(signal(series, null, cfg).side, 'buy');
-  assert.equal(signal([{ price: '960000' }], { amount: '100000000', cost: '1000000' }, cfg).reason, 'stop loss');
-  assert.equal(signal([{ price: '1070000' }], { amount: '100000000', cost: '1000000' }, cfg).reason, 'take profit');
+  assert.equal(signal([{ price: '960000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
+  assert.equal(signal([{ price: '1070000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
   assert.equal(signal(series.slice(0, 2), null, cfg), null);
 });
-test('automatic crossover buys DOGE using SOL and stop loss sells it back', async t => {
+test('automatic crossover buys and strategy sells the configured percentage', async t => {
   const f = fixture(t); f.engine.start();
   for (const price of [1000000, 1000000, 1000000, 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
   assert.equal(f.store.orders().length, 1); assert.ok(f.engine.position());
   f.price(900000); await f.engine.tick();
-  assert.equal(f.store.orders().length, 2); assert.equal(f.engine.position(), null);
-  assert.equal(f.store.orders()[0].side, 'sell'); assert.equal(f.store.orders()[0].reason, 'stop loss');
+  assert.equal(f.store.orders().length, 2); assert.ok(f.engine.position());
+  assert.equal(f.store.orders()[0].side, 'sell'); assert.equal(f.store.orders()[0].reason, 'EMA below slow');
 });
 test('single-coin mode tracks every supported asset without creating trades', async t => {
   const f = fixture(t), settings = strategySettings(f.cfg);

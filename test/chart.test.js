@@ -21,54 +21,19 @@ function chart(position = null, livePrice = null) {
   return { sandbox, labels, text, render: samples => { labels.length = 0; sandbox.drawChart(samples); } };
 }
 
-test('flat positions show clearly labeled TP and SL preview values', () => {
-  const c = chart(); c.render([{ time: 1, price: 500 }, { time: 15001, price: 600 }]);
-  assert.deepEqual(c.labels, ['TP preview 636 SOL ↑ above range', 'SL preview 582 SOL']);
-  assert.match(c.text['chart-levels'], /no open position/);
-});
-
-test('open-position levels use entry cost despite independent price updates', () => {
-  const c = chart({ amount: '0.00005', cost: '0.025' }, { price: 700 });
-  c.render([{ time: 1, price: 600 }]);
-  assert.deepEqual(c.labels, ['TP 530 SOL', 'SL 485 SOL']);
-  c.render([]); assert.deepEqual(c.labels, ['TP 530 SOL', 'SL 485 SOL']);
-  c.sandbox.state.strategy.takeProfit = 10; c.render([]);
-  assert.equal(c.labels[0], 'TP 550 SOL');
-});
-
-test('first live quote supplies preview levels before chart history arrives', () => {
-  const c = chart(null, { price: 500 }); c.render([]);
-  assert.deepEqual(c.labels, ['TP preview 530 SOL', 'SL preview 485 SOL']);
-});
-
-test('closing a position returns to previews and missing prices show a waiting message', () => {
-  const c = chart({ amount: '0.00005', cost: '0.025' }); c.render([]);
-  c.sandbox.state.position = null; c.render([{ time: 1, price: 600 }]);
-  assert.deepEqual(c.labels, ['TP preview 636 SOL', 'SL preview 582 SOL']);
-  c.render([]); assert.equal(c.labels.length, 0);
-  assert.match(c.text['chart-levels'], /Waiting for a price/);
-});
-
-
-test('small real movements use a tight range without being flattened by distant TP and SL', () => {
-  const c = chart({amount:'0.00005',cost:'0.025'});
+test('chart omits all exit levels, preserves receipt markers and tightly scales real prices', () => {
+  const c = chart({amount:'1',cost:'100',stopPrice:99,slTrailing:true});
+  c.sandbox.state.chartTrades=[{time:15001,side:'buy',status:'filled'},{time:30001,side:'sell',status:'filled'}];
   c.render([{time:1,price:500},{time:15001,price:500.1},{time:30001,price:500.05}]);
+  assert.deepEqual(c.labels, []);
   assert.match(c.text['chart-levels'], /Auto scale 499.985–500.115 SOL/);
-  assert.deepEqual(c.labels, ['TP 530 SOL ↑ above range','SL 485 SOL ↓ below range']);
+  assert.match(c.text['aria-label'], /1 completed buys.*1 completed sells/);
+  assert.doesNotMatch(c.text['aria-label'], /TP|SL|levels/);
 });
-
-test('chart uses the persisted trailing SL while TP remains anchored to the buy', () => {
-  const c = chart({ amount: '1', cost: '100', stopPrice: 99.96, slTrailing: true }, { price: 120 });
-  c.sandbox.state.strategy = { takeProfit: 3, stopLoss: 2 };
-  c.render([{ time: 1, price: 102 }]);
-  assert.deepEqual(c.labels, ['TP 103 SOL', 'SL 99.96 SOL']);
-  assert.match(c.text['chart-levels'], /trailing SL active/);
-});
-
-test('chart can display each buy lot independently', () => {
-  const c=chart({amount:'2',cost:'3'});
-  c.sandbox.state.positions=[{id:'a',label:'Buy 1',amount:'1',cost:'1',stopPrice:0.98},{id:'b',label:'Buy 2',amount:'1',cost:'2',stopPrice:1.96}];
-  c.sandbox.chartLotId='a'; c.render([]); assert.equal(c.labels[0],'TP 1.06 SOL');
-  c.sandbox.chartLotId='b'; c.render([]); assert.equal(c.labels[0],'TP 2.12 SOL');
-  assert.match(c.text['chart-levels'],/Buy 2/);
+test('empty and single-sample charts wait without displaying legacy exit levels', () => {
+  const c=chart({amount:'1',cost:'100',stopPrice:99}, {price:120});
+  for (const samples of [[], [{time:1,price:120}]]) {
+    c.render(samples); assert.deepEqual(c.labels, []);
+    assert.match(c.text['aria-label'], /Waiting for price samples/);
+  }
 });

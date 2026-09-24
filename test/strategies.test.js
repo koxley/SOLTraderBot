@@ -30,12 +30,12 @@ test('alternative strategies generate distinct entries and exits, not repeated o
   assert.equal(alternativeSignal([10,10,5,8], {}, bbCfg).side, 'sell');
   assert.equal(alternativeSignal([10,10,5,1], null, bbCfg), null);
 });
-test('all strategies respect warm-up and TP/SL priority even with one sample', () => {
+test('all strategies wait for warm-up and ignore old exit thresholds', () => {
   for (const type of ['ema','sma','rsi','bollinger']) {
     const cfg = cfgFor({type}), position = {amount:'100000000',cost:'100000000000'};
     assert.equal(signal([{price:'100000000000'}], null, cfg), null);
-    assert.equal(signal([{price:'97000000000'}], position, cfg).reason, 'stop loss');
-    assert.equal(signal([{price:'103000000000'}], position, cfg).reason, 'take profit');
+    assert.equal(signal([{price:'97000000000'}], position, cfg), null);
+    assert.equal(signal([{price:'103000000000'}], position, cfg), null);
     assert.ok(warmup(cfg) >= 3);
   }
 });

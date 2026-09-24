@@ -31,28 +31,18 @@ test('consecutive buys use changing cash balances; consecutive sells reduce olde
   const reopened = new Engine(config({},false),store,{}); assert.equal(reopened.position().lots.length,2);
   assert.equal(reopened.cfg.tradePercentBps,1000); assert.equal(reopened.active(),false);
 });
-test('TP exits only the triggered buy, retains other lots, and Close Open Positions exits the rest', async t=>{
-  const {engine,cfg,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
+test('old TP SL and trailing levels cannot close buys; manual close still exits every lot', async t=>{
+  const {engine,cfg,store,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
   price(1100000000); await engine.trade({side:'buy',reason:'second'});
-  const second={...engine.position().lots[1]};
-  const decision=signal([{price:'1040000000'}],engine.position(),cfg);
-  assert.equal(decision.reason,'take profit'); assert.equal(decision.lotId,engine.position().lots[0].id);
-  price(1040000000); await engine.trade(decision);
-  assert.equal(engine.position().lots.length,1); assert.deepEqual(engine.position().lots[0],second);
-  assert.equal(engine.orders()[0].actualInput,'10000000');
+  const before=engine.position(); before.lots[0].slHigh='999999999999'; store.set(engine.key('position'),before);
+  cfg.stopLoss=200; cfg.takeProfit=300;
+  for (const value of [100000000,1200000000,5000000000]) {
+    store.set(engine.key('samples'),[]); price(value); await engine.tick();
+    assert.deepEqual(engine.position(),before); assert.equal(engine.orders().length,2);
+  }
   engine.requestClose(); await engine.tick(); assert.equal(engine.position(),null); assert.equal(engine.active(),false);
 });
-test('one sample closes all triggered lots and each trailing high persists separately', async t=>{
-  const {engine,store,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
-  price(1100000000); await engine.trade({side:'buy',reason:'second'});
-  price(1020000000); await engine.tick();
-  // Second buy hits its own SL; first buy gains 2% and activates its own trailing stop.
-  assert.equal(engine.position().lots.length,1); assert.equal(engine.position().lots[0].slHigh,'1020000000');
-  assert.equal(engine.orders()[0].reason,'stop loss');
-  price(1020000000); await engine.trade({side:'buy',reason:'third'});
-  store.set(engine.key('samples'),[]); price(1200000000); await engine.tick();
-  assert.equal(engine.position(),null); assert.equal(engine.orders().filter(o=>o.reason==='take profit').length,2);
-});
+
 test('partial fills allocate cost without loss and reject over-selling atomically', async t=>{
   const {engine,store}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
   const before=engine.position(), balance=await engine.balances();
@@ -81,10 +71,12 @@ test('buy signals can add to holdings and live Available to Trade excludes gas r
   const server=appServer(engine,{demo:true}); await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>new Promise(r=>server.close(r)));
   const balance=await (await fetch(`http://127.0.0.1:${server.address().port}/api/balance`)).json(); assert.equal(balance.availableToTrade,'1000000000');
 });
-test('snapshot publishes independent per-buy TP and SL values', async t=>{
+test('snapshot retains per-buy cost and amounts but omits exit levels', async t=>{
   const {engine,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
   price(2000000000); await engine.trade({side:'buy',reason:'second'});
   const state=snapshot(engine); assert.equal(state.positions.length,2);
-  assert.equal(state.positions[0].takeProfitPrice,1.03); assert.equal(state.positions[1].takeProfitPrice,2.06);
-  assert.equal(state.positions[0].stopPrice,0.98); assert.equal(state.positions[1].stopPrice,1.96);
+  for (const lot of [state.position,...state.positions]) {
+    assert.ok(lot.amount && lot.cost);
+    for (const key of ['takeProfitPrice','stopPrice','slTrailing']) assert.equal(Object.hasOwn(lot,key),false);
+  }
 });
