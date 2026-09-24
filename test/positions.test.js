@@ -101,3 +101,26 @@ test('sell allocations retain exact buy identity, cost and proceeds through part
   assert.equal(view.trades.find(o=>o.id===second).sellAllocations[0].sellId,close.id);
   assert.equal(view.trades.find(o=>o.id===close.id).buyAllocations[0].buyId,first);
 });
+
+test('explicit Stop clears displayed history and graph, resets paper cash/return and preserves inventory and limits', async t => {
+  const {engine,store,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
+  price(2000000000); await engine.trade({side:'sell',reason:'partial'});
+  const position=engine.position(), count=engine.orders().length;
+  store.set(engine.key('samples'),[{time:1,price:'2000000000'}]); store.set(engine.key('chartSamples'),[{time:1,price:'2000000000'}]);
+  engine.stop(true); const state=snapshot(engine);
+  assert.equal(state.trades.length,0); assert.equal(state.tradeCount,0); assert.equal(state.realized,0);
+  assert.deepEqual(state.samples,[]); assert.deepEqual(state.chartTrades,[]);
+  assert.equal((await engine.balances()).SOL,'1000000000'); assert.deepEqual(engine.position(),position);
+  assert.equal(engine.orders().length,count); assert.equal(state.chartReset,true);
+  const reopened=new Engine(config({},false),store,{}); assert.equal(snapshot(reopened).tradeCount,0);
+  engine.start(); assert.equal(snapshot(engine).chartReset,false);
+  await engine.trade({side:'sell',reason:'new session'}); assert.equal(snapshot(engine).tradeCount,1);
+  assert.equal(engine.orders()[0].buyAllocations[0].buyId,position.lots[0].id);
+});
+test('Stop defers paper cash reset for an unsettled operation and never writes live wallet balances', async t => {
+  const {engine,store,cfg}=fixture(t); engine.setPaperBalance('4'); engine.busy=true; engine.stop(true);
+  assert.equal((await engine.balances()).SOL,'4000000000');
+  engine.busy=false; engine.finishSessionReset(); assert.equal((await engine.balances()).SOL,'1000000000');
+  engine.setPaperBalance('4'); cfg.mode='live'; engine.stop(true);
+  assert.equal(store.get(engine.paperKey()).SOL,'4000000000');
+});
