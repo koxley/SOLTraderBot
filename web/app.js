@@ -3,7 +3,7 @@ tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
 const marketFields = document.createElement('div');
 marketFields.className = 'settings-grid';
-marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"><option>SOL</option><option>ETH</option><option>DOGE</option><option>XRP</option><option>USDC</option><option>USDT</option></select></label>';
+marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label>';
 $('strategy-fields').prepend(marketFields);
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
@@ -13,7 +13,16 @@ let savingBalance = false;
 let chartLotId = '';
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
+  const tracked = $('setting-asset');
+  tracked.replaceChildren();
+  for (const asset of state?.assets || []) tracked.add(new Option(asset.symbol, asset.symbol));
+  if (settings.marketType === 'track' && !state?.assets?.some(a => a.symbol === settings.asset)) {
+    const legacy = new Option(`Previous ${settings.asset} — choose a supported coin`, '');
+    tracked.add(legacy, 0);
+  }
+
   for (const [key, value] of Object.entries(settings)) { const field = $(`setting-${key}`); if (field) field.value = value; }
+  if (!tracked.value && settings.marketType !== 'track') tracked.value = state?.assets?.[0]?.symbol || '';
   updateStrategyFields();
 }
 const strategyNames = { ema: 'EMA crossover', sma: 'SMA crossover', rsi: 'RSI recovery', bollinger: 'Bollinger band recovery' };
