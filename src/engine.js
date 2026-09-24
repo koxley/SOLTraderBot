@@ -1,3 +1,4 @@
+import { lotsOf, aggregate, reduceLots, availableQuote, percentAmount } from './positions.js';
 import { warmup, alternativeSignal } from './indicators.js';
 import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
@@ -31,17 +32,17 @@ export function ema(values, period) {
 export function signal(samples, position, cfg) {
   if (!samples.length) return null;
   const last = BigInt(samples.at(-1).price);
-  if (position) {
-    const stop = stopLevel(position, cfg);
-    if (last * stop.denominator <= stop.numerator) return { side: 'sell', reason: 'stop loss' };
-    if (last * BigInt(position.amount) * 10000n >= BigInt(position.cost) * (10n ** BigInt(cfg.tokens[cfg.base].decimals)) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit' };
+  for (const lot of lotsOf(position)) {
+    const stop = stopLevel(lot, cfg);
+    if (last * stop.denominator <= stop.numerator) return { side: 'sell', reason: 'stop loss', lotId: lot.id };
+    if (last * BigInt(lot.amount) * 10000n >= BigInt(lot.cost) * (10n ** BigInt(cfg.tokens[cfg.base].decimals)) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit', lotId: lot.id };
   }
   if (samples.length < warmup(cfg)) return null;
   const prices = samples.map(s => Number(s.price));
   if (cfg.strategyType && cfg.strategyType !== 'ema') return alternativeSignal(prices, position, cfg);
   const fast = ema(prices, cfg.fast), slow = ema(prices, cfg.slow);
   const previous = prices.slice(0, -1);
-  if (!position && ema(previous, cfg.fast) <= ema(previous, cfg.slow) && fast > slow)
+  if (ema(previous, cfg.fast) <= ema(previous, cfg.slow) && fast > slow)
     return { side: 'buy', reason: 'EMA crossed up' };
   if (position && fast < slow) return { side: 'sell', reason: 'EMA below slow' };
   return null;
@@ -92,6 +93,7 @@ export class Engine {
     this.store.set('running', false);
     const saved = this.store.get(this.key('strategy'));
     if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair));
+    else this.cfg.tradePercentBps = Math.max(1, Math.min(10000, Math.round(this.defaultStrategy.sizePercent * 100)));
   }
   configure(settings) {
     if (this.busy || this.closing || this.pending().length)
@@ -194,7 +196,6 @@ export class Engine {
     if (this.market().executable && this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
-    if (this.market().executable && BigInt(this.cfg.tradeSize) > BigInt(this.cfg.maxTrade)) throw new UserError('TRADE_SIZE_SOL exceeds MAX_TRADE_SOL.');
     if (this.market().executable) this.resetPaperSOL();
     this.stopping = false;
     this.store.set('running', true);
@@ -242,12 +243,22 @@ export class Engine {
       }
       const position = this.position();
       if (position && this.active()) {
-        const updated = advanceStop(position, q.outAmount, this.cfg);
-        if (updated !== position) this.store.set(this.key('position'), updated);
+        const updated = aggregate(lotsOf(position).map(lot => advanceStop(lot, q.outAmount, this.cfg)));
+        this.store.set(this.key('position'), updated);
       }
       const decision = signal(samples, this.position(), this.cfg);
       if (!decision || !this.active()) { this.store.set('errors', 0); return null; }
-      const result = await this.trade(decision);
+      const results = [await this.trade(decision)];
+      // Every lot triggered by this sample receives its own exit, before any new entry.
+      if (decision.lotId) {
+        let next = signal(samples, this.position(), this.cfg);
+        while (this.active() && next?.lotId && next.lotId !== decision.lotId) {
+          results.push(await this.trade(next));
+          if (lotsOf(this.position()).some(lot => lot.id === next.lotId)) break;
+          next = signal(samples, this.position(), this.cfg);
+        }
+      }
+      const result = results.filter(Boolean).join('\n\n');
       this.store.set('errors', 0);
       return result;
     } catch (error) {
@@ -259,20 +270,25 @@ export class Engine {
       return `${this.active() ? 'Temporary failure' : 'Bot stopped'}: ${error instanceof UserError ? error.message : 'Provider or storage error; inspect connectivity and /status.'}`;
     } finally { this.busy = false; }
   }
-  async trade({ side, reason }, forceExit = false) {
+  async trade({ side, reason, lotId }, forceExit = false) {
     if (!this.market().executable) throw new UserError('Single-coin tracking never submits trades.');
     const generation = this.generation;
     const allowed = () => generation === this.generation && (this.active() || forceExit);
     const input = side === 'buy' ? this.cfg.quote : this.cfg.base, output = side === 'buy' ? this.cfg.base : this.cfg.quote;
-    const amount = side === 'buy' ? this.cfg.tradeSize : this.position()?.amount;
-    if (!amount) throw new UserError('No strategy position to sell.');
+    const balances = await this.balances();
+    if (!allowed()) return 'Stopped before trade submission.';
+    const position = this.position();
+    const lot = lotId ? lotsOf(position).find(p => p.id === lotId) : null;
+    const held = BigInt(position?.amount || '0');
+    const amount = (side === 'buy' ? percentAmount(availableQuote(balances, this.cfg), this.cfg.tradePercentBps) :
+      forceExit ? held : lotId ? BigInt(lot?.amount || '0') : percentAmount(held, this.cfg.tradePercentBps)).toString();
+    if (BigInt(amount) === 0n) return 'Signal skipped: available balance is too small for the configured percentage.';
     const fetchedAt = this.now();
     const q = validateQuote(await this.jupiter.quote(input, output, amount, this.cfg.mode === 'live' ? this.wallet?.address : undefined), input, output, amount, this.cfg, this.cfg.mode === 'live');
     if (this.cfg.mode === 'live' && q.taker !== this.wallet.address) throw new UserError('Quote wallet mismatch.');
     const notional = BigInt(side === 'buy' ? amount : q.outAmount);
     // Entry limits must never trap an existing position after a price increase.
     if (side === 'buy') this.budget(notional);
-    const balances = await this.balances();
     if (BigInt(balances[input]) < BigInt(amount)) throw new UserError(`Insufficient ${input} balance.`);
     if (this.cfg.mode === 'live') {
       const fees = ['signatureFeeLamports', 'prioritizationFeeLamports', 'rentFeeLamports'].reduce((sum, key) => {
@@ -284,7 +300,7 @@ export class Engine {
         throw new UserError('Insufficient SOL gas reserve.');
     }
     if (!allowed()) return 'Stopped before trade submission.';
-    const order = { id: randomUUID(), pair: this.cfg.pair, mode: this.cfg.mode, side, reason, input, output, amount,
+    const order = { id: randomUUID(), ...(lotId ? { lotId } : {}), pair: this.cfg.pair, mode: this.cfg.mode, side, reason, input, output, amount,
       expected: q.outAmount, minimum: q.otherAmountThreshold, notional: notional.toString(),
       day: new Date(this.now()).toISOString().slice(0, 10), time: this.now(), status: 'submitting' };
     if (this.cfg.mode === 'paper') {
@@ -328,8 +344,13 @@ export class Engine {
         this.store.set(this.paperKey(), b);
       }
       const old = this.position();
-      if (order.side === 'sell' && old) order.realizedQuote = (BigInt(actualOutput) - BigInt(old.cost)).toString();
-      this.store.set(this.key('position'), order.side === 'buy' ? { amount: actualOutput, cost: actualInput, opened: this.now() } : null);
+      if (order.side === 'buy') {
+        this.store.set(this.key('position'), aggregate([...lotsOf(old), { id: order.id, amount: actualOutput, cost: actualInput, opened: this.now() }]));
+      } else {
+        const reduced = reduceLots(old, actualInput, order.lotId);
+        order.realizedQuote = (BigInt(actualOutput) - reduced.cost).toString();
+        this.store.set(this.key('position'), reduced.position);
+      }
       Object.assign(order, { status: 'filled', actualInput, actualOutput });
       this.store.put(order);
     });
@@ -362,6 +383,6 @@ export class Engine {
     const p = this.position();
     const market = this.market();
     const heading = market.executable ? `${market.asset}/${market.reference} trading` : `${market.asset} single-coin tracking (${market.reference} reference; no trades)`;
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
   }
 }

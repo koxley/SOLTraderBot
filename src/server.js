@@ -1,3 +1,4 @@
+import { lotsOf, availableQuote } from './positions.js';
 import { warmup } from './indicators.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -59,6 +60,12 @@ export function snapshot(engine) {
       stopPrice: Number(stop.numerator) / Number(stop.denominator) / 10 ** cfg.quoteDecimals,
       slTrailing: Boolean(p.slHigh),
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
+    positions: lotsOf(p).map((lot, index) => {
+      const level = stopLevel(lot, cfg);
+      return { id: lot.id, label: `Buy ${index + 1}`, opened: lot.opened, amount: format(lot.amount, cfg.tokens[cfg.base].decimals), cost: format(lot.cost, cfg.quoteDecimals),
+        takeProfitPrice: Number(lot.cost) / Number(lot.amount) * 10 ** (cfg.tokens[cfg.base].decimals - cfg.quoteDecimals) * (1 + cfg.takeProfit / 10000),
+        stopPrice: Number(level.numerator) / Number(level.denominator) / 10 ** cfg.quoteDecimals, slTrailing: Boolean(lot.slHigh) };
+    }),
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),
     chartTrades: orders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)
@@ -117,7 +124,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
         return reply(401, { error: 'Open this app from your bot in Telegram using the authorized owner account.' });
       if (req.method === 'GET' && path === '/api/price') return reply(200, await marketPrice());
       if (req.method === 'GET' && path === '/api/state') return reply(200, { ...snapshot(engine), demo });
-      if (req.method === 'GET' && path === '/api/balance') return reply(200, await engine.balances());
+      if (req.method === 'GET' && path === '/api/balance') { const balance = await engine.balances(); return reply(200, { ...balance, availableToTrade: availableQuote(balance, engine.cfg).toString() }); }
       if (req.method === 'GET' && path === '/api/wallet') {
         if (!engine.wallet) return reply(200, { exists: vault?.exists() || false, locked: vault?.exists() || false, demo });
         if (demo) return reply(200, { exists: true, demo: true, address: 'Preview wallet — no real deposits', balance: await engine.balances() });

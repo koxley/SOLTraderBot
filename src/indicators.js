@@ -19,18 +19,18 @@ export function alternativeSignal(prices, position, cfg) {
   const previous = prices.slice(0, -1), last = prices.at(-1);
   if (cfg.strategyType === 'sma') {
     const fast = sma(prices, cfg.fast), slow = sma(prices, cfg.slow);
-    if (!position && sma(previous, cfg.fast) <= sma(previous, cfg.slow) && fast > slow) return { side: 'buy', reason: 'SMA crossed up' };
+    if (sma(previous, cfg.fast) <= sma(previous, cfg.slow) && fast > slow) return { side: 'buy', reason: 'SMA crossed up' };
     if (position && fast < slow) return { side: 'sell', reason: 'SMA below slow' };
   }
   if (cfg.strategyType === 'rsi') {
     const value = rsi(prices, cfg.rsiPeriod);
-    if (!position && rsi(previous, cfg.rsiPeriod) <= cfg.rsiBuy && value > cfg.rsiBuy) return { side: 'buy', reason: 'RSI recovered above entry threshold' };
+    if (rsi(previous, cfg.rsiPeriod) <= cfg.rsiBuy && value > cfg.rsiBuy) return { side: 'buy', reason: 'RSI recovered above entry threshold' };
     if (position && value >= cfg.rsiSell) return { side: 'sell', reason: 'RSI reached exit threshold' };
   }
   if (cfg.strategyType === 'bollinger') {
     const current = bands(prices, cfg.bbPeriod, cfg.bbDeviation), prior = bands(previous, cfg.bbPeriod, cfg.bbDeviation);
-    if (!position && previous.at(-1) < prior.lower && last >= current.lower) return { side: 'buy', reason: 'Price recovered inside Bollinger bands' };
     if (position && last >= current.middle) return { side: 'sell', reason: 'Price reached Bollinger middle band' };
+    if (previous.at(-1) < prior.lower && last >= current.lower) return { side: 'buy', reason: 'Price recovered inside Bollinger bands' };
   }
   return null;
 }

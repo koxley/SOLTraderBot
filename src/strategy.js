@@ -2,16 +2,17 @@ import { config, format, UserError, TRACKED_ASSETS } from './config.js';
 
 export function strategySettings(cfg) {
   return { marketType: cfg.marketType || 'pair', asset: cfg.trackedAsset || cfg.base, type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
-    size: format(cfg.tradeSize, cfg.quoteDecimals), stopLoss: cfg.stopLoss / 100,
+    sizePercent: (cfg.tradePercentBps ?? Math.max(1, Math.min(10000, Number(BigInt(cfg.tradeSize) * 10000n / (10n ** BigInt(cfg.quoteDecimals)))))) / 100, stopLoss: cfg.stopLoss / 100,
     takeProfit: cfg.takeProfit / 100, slippage: cfg.slippage / 100,
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals), maxDaily: format(cfg.maxDaily, cfg.quoteDecimals) };
 }
 
 export function validateStrategy(input, pair = 'CBBTC_SOL') {
-  const keys = ['fast', 'slow', 'interval', 'size', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'marketType', 'asset', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
+  const keys = ['fast', 'slow', 'interval', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'marketType', 'asset', 'size', 'sizePercent', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
       keys.some(k => !Object.hasOwn(input, k) || !['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))
-    throw new UserError('Provide all nine strategy settings as positive decimal numbers.');
+    throw new UserError('Provide all required strategy settings as positive decimal numbers.');
+  if (Object.hasOwn(input, 'size') === Object.hasOwn(input, 'sizePercent')) throw new UserError('Provide trade size as a percentage.');
   const strategyType = Object.hasOwn(input, 'type') ? input.type : 'ema';
   if (!['ema', 'sma', 'rsi', 'bollinger'].includes(strategyType)) throw new UserError('Choose a supported strategy.');
   const marketType = Object.hasOwn(input, 'marketType') ? input.marketType : 'pair';
@@ -35,12 +36,14 @@ export function validateStrategy(input, pair = 'CBBTC_SOL') {
     return String(Math.round(n));
   };
   try {
+    const tradePercentBps = Object.hasOwn(input, 'sizePercent') ? Number(bps(numeric('sizePercent', 2.5, 0.01, 100))) : Math.max(1, Math.min(10000, Math.round(numeric('size', 0.025, 0.000000001, 1000000000) * 10000)));
+    if (tradePercentBps < 1 || tradePercentBps > 10000) throw new UserError('Trade size must be between 0.01% and 100%.');
     const cfg = config({ TRADING_PAIR: pair.startsWith('TOKEN_') ? 'CBBTC_SOL' : pair, EMA_FAST: String(input.fast), EMA_SLOW: String(input.slow), SAMPLE_SECONDS: String(input.interval),
-      [pair === 'SOL_USDC' ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL']: String(input.size), STOP_LOSS_BPS: bps(input.stopLoss), TAKE_PROFIT_BPS: bps(input.takeProfit),
+      [pair === 'SOL_USDC' ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL']: String(input.size ?? (pair === 'SOL_USDC' ? '0.000001' : '0.000000001')), STOP_LOSS_BPS: bps(input.stopLoss), TAKE_PROFIT_BPS: bps(input.takeProfit),
       SLIPPAGE_BPS: bps(input.slippage), [pair === 'SOL_USDC' ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL']: String(input.maxTrade), [pair === 'SOL_USDC' ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL']: String(input.maxDaily) }, false);
-    if (BigInt(cfg.tradeSize) > BigInt(cfg.maxTrade) || BigInt(cfg.maxTrade) > BigInt(cfg.maxDaily))
-      throw new UserError('Trade size must be ≤ maximum entry ≤ daily limit.');
-    return { ...extra, marketType, trackedAsset, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
+    if (BigInt(cfg.maxTrade) > BigInt(cfg.maxDaily))
+      throw new UserError('Maximum entry must be no greater than the daily limit.');
+    return { ...extra, marketType, trackedAsset, tradePercentBps, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
       stopLoss: cfg.stopLoss, takeProfit: cfg.takeProfit, slippage: cfg.slippage, maxTrade: cfg.maxTrade, maxDaily: cfg.maxDaily };
   } catch (error) { throw new UserError(error.message); }
 }
