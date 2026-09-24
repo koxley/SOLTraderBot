@@ -103,7 +103,7 @@ function render(s) {
   $('balance-amount').disabled = locked || savingBalance || actionBusy;
   $('save-balance').disabled = locked || savingBalance || actionBusy;
   if (tracking) { text('available', '—'); text('available-note', 'Tracking uses no funds'); }
-  else text('available-note', s.mode === 'paper' ? `SOL · resets to 1 on reopen; ${s.paperStartingBalance || '1'} on start` : 'SOL · available after gas reserve and fee buffer');
+  else text('available-note', s.mode === 'paper' ? 'SOL · resets to 1 on reopen/start' : 'SOL · available after gas reserve and fee buffer');
   const strategyLocked = s.closing || !!s.pending;
   $('strategy-fields').disabled = strategyLocked || savingSettings;
   $('save-strategy').disabled = strategyLocked || savingSettings;
