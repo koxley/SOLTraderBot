@@ -13,17 +13,17 @@ function chart(position = null, livePrice = null) {
       key === 'fillText' ? (label, x, y) => { assert.ok(Number.isFinite(x) && Number.isFinite(y)); labels.push(label); } : () => {},
     set: () => true
   });
-  const elements = { chart: { getBoundingClientRect: () => ({ width: 320, height: 178 }),
+  const elements = { 'chart-levels': {}, chart: { getBoundingClientRect: () => ({ width: 320, height: 178 }),
     getContext: () => context, setAttribute: (key, value) => { text[key] = value; } }, 'chart-empty': {} };
   const sandbox = { state: { position, strategy: { takeProfit: 6, stopLoss: 3 }, quote: 'SOL' }, livePrice,
-    window: { devicePixelRatio: 1 }, $: id => elements[id], text: (id, value) => { text[id] = value; } };
+    window: { devicePixelRatio: 1 }, $: id => elements[id], text: (id, value) => { text[id] = value; if(elements[id]) elements[id].textContent=value; } };
   vm.createContext(sandbox); vm.runInContext(draw, sandbox);
   return { sandbox, labels, text, render: samples => { labels.length = 0; sandbox.drawChart(samples); } };
 }
 
 test('flat positions show clearly labeled TP and SL preview values', () => {
   const c = chart(); c.render([{ time: 1, price: 500 }, { time: 15001, price: 600 }]);
-  assert.deepEqual(c.labels, ['TP preview 636 SOL', 'SL preview 582 SOL']);
+  assert.deepEqual(c.labels, ['TP preview 636 SOL ↑ above range', 'SL preview 582 SOL']);
   assert.match(c.text['chart-levels'], /no open position/);
 });
 
@@ -47,4 +47,12 @@ test('closing a position returns to previews and missing prices show a waiting m
   assert.deepEqual(c.labels, ['TP preview 636 SOL', 'SL preview 582 SOL']);
   c.render([]); assert.equal(c.labels.length, 0);
   assert.match(c.text['chart-levels'], /Waiting for a price/);
+});
+
+
+test('small real movements use a tight range without being flattened by distant TP and SL', () => {
+  const c = chart({amount:'0.00005',cost:'0.025'});
+  c.render([{time:1,price:500},{time:15001,price:500.1},{time:30001,price:500.05}]);
+  assert.match(c.text['chart-levels'], /Auto scale 499.985–500.115 SOL/);
+  assert.deepEqual(c.labels, ['TP 530 SOL ↑ above range','SL 485 SOL ↓ below range']);
 });
