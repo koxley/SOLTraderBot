@@ -56,3 +56,11 @@ test('small real movements use a tight range without being flattened by distant 
   assert.match(c.text['chart-levels'], /Auto scale 499.985–500.115 SOL/);
   assert.deepEqual(c.labels, ['TP 530 SOL ↑ above range','SL 485 SOL ↓ below range']);
 });
+
+test('chart uses the persisted trailing SL while TP remains anchored to the buy', () => {
+  const c = chart({ amount: '1', cost: '100', stopPrice: 99.96, slTrailing: true }, { price: 120 });
+  c.sandbox.state.strategy = { takeProfit: 3, stopLoss: 2 };
+  c.render([{ time: 1, price: 102 }]);
+  assert.deepEqual(c.labels, ['TP 103 SOL', 'SL 99.96 SOL']);
+  assert.match(c.text['chart-levels'], /trailing SL active/);
+});
