@@ -187,6 +187,15 @@ export class Engine {
       this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: value });
     });
   }
+  resetPaperSession() {
+    if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
+    const realized = this.orders().filter(order => order.mode === 'paper')
+      .reduce((sum, order) => sum + BigInt(order.realizedQuote || order.realizedSOL || '0'), 0n);
+    this.store.atomic(() => {
+      this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
+      this.store.set(this.key('realizedBaseline'), realized.toString());
+    });
+  }
   resetPaperSOL() {
     if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
     this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: this.store.get(this.key('startingBalance')) ?? (10n ** BigInt(this.cfg.quoteDecimals)).toString() });

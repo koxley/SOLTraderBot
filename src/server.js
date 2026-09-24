@@ -47,7 +47,8 @@ export function snapshot(engine) {
   const samples = engine.store.get(engine.key('samples')) || [];
   const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
-  const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
+  const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n) -
+    (cfg.mode === 'paper' ? BigInt(engine.store.get(engine.key('realizedBaseline')) || '0') : 0n);
   const last = samples.at(-1);
   return { pair: cfg.pair, assets: ASSETS, base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, marketType: cfg.marketType || 'pair', trackedAsset: cfg.trackedAsset, market, marketKey: `${cfg.marketType || 'pair'}:${market.asset}:${market.reference}`, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
@@ -181,7 +182,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
             } finally { walletBusy = false; }
           }
           case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
-          case '/api/paper/reset-balance': engine.resetPaperSOL(); break;
+          case '/api/paper/reset-balance': engine.resetPaperSession(); break;
           case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(); break;
           case '/api/close': engine.requestClose(); break;
