@@ -110,11 +110,11 @@ function drawChart(samples) {
   const firstTime = samples[0]?.time ?? 0, lastTime = samples.at(-1)?.time ?? firstTime;
   const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
   const points = samples.map(s => [xAt(s.time), h - 28 - (s.price - min) / range * (h - 56)]);
-  const gradient = ctx.createLinearGradient(0, 0, 0, h); gradient.addColorStop(0, '#b6f36b24'); gradient.addColorStop(1, '#b6f36b00');
+  const gradient = ctx.createLinearGradient(0, 0, 0, h); gradient.addColorStop(0, '#70b7ff24'); gradient.addColorStop(1, '#70b7ff00');
   if (points.length) {
   ctx.beginPath(); ctx.moveTo(points[0][0], h); for (const p of points) ctx.lineTo(...p); ctx.lineTo(points.at(-1)[0], h); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
-  ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.strokeStyle = '#b6f36b'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
-  ctx.beginPath(); ctx.arc(...points.at(-1), 3, 0, Math.PI * 2); ctx.fillStyle = '#b6f36b'; ctx.fill();
+  ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.strokeStyle = '#70b7ff'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(...points.at(-1), 3, 0, Math.PI * 2); ctx.fillStyle = '#70b7ff'; ctx.fill();
   }
   const completed = trades.filter(t => points.length && t.status === 'filled' && ['buy', 'sell'].includes(t.side) && t.time >= firstTime);
   for (const trade of completed) {
