@@ -37,3 +37,7 @@ Signals retain their existing timing: crossover/recovery entries require a fresh
 
 Completed sells persist allocations to their original buy IDs, including sold quantity, cost basis, proceeds, and realized return. Partial sells consume the oldest buys first. One sell may link to several buys; each buy may link to several sells. Links survive restarts and reconciliation. Transactions show both directions, even when a linked order is outside the latest 30 rows. Earlier sells without stored allocations are explicitly marked as historical; links are not guessed. Legacy aggregate holdings retain their legacy lot identifier.
 
+
+## Stop resets the displayed session
+
+Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart starts collecting again on Start. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and daily spending limits. If an operation is in flight, the cash reset waits for settlement.
