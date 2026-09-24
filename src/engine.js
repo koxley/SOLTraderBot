@@ -8,17 +8,6 @@ const unresolved = new Set(['submitting', 'unknown']);
 const positiveInteger = n => typeof n === 'string' && /^\d+$/.test(n) && BigInt(n) > 0n;
 
 export function validateQuote(q, input, output, amount, cfg, live = false) {
-  if (live && q.errorCode) {
-    const code = Number(q.errorCode);
-    if (code === 1) throw new UserError(`Jupiter reports insufficient ${input} for this trade. Check the live wallet balance or reduce the trade size.`);
-    if (['metis', 'dflow', 'okx'].includes(q.router) && code === 2)
-      throw new UserError('Jupiter reports insufficient SOL for network fees. Fund the bot wallet with SOL.');
-    if (['metis', 'dflow', 'okx'].includes(q.router) && code === 3)
-      throw new UserError('This swap is below Jupiter’s gasless minimum. Fund the wallet with SOL for fees.');
-    if (q.router === 'jupiterz' && code === 2)
-      throw new UserError('Jupiter returned an RFQ route requiring a missing token account; no swap was submitted.');
-    throw new UserError(`Jupiter could not build this swap (code ${Number.isSafeInteger(code) ? code : 'unknown'}). No swap was submitted.`);
-  }
   if (q.error || q.errorCode || q.inputMint !== cfg.tokens[input].mint || q.outputMint !== cfg.tokens[output].mint ||
     q.inAmount !== amount || !positiveInteger(q.outAmount) || !positiveInteger(q.otherAmountThreshold) ||
     !Number.isInteger(q.slippageBps) || q.slippageBps < 0 || q.slippageBps > cfg.slippage || q.swapMode !== 'ExactIn')
@@ -26,12 +15,8 @@ export function validateQuote(q, input, output, amount, cfg, live = false) {
   const floor = BigInt(q.outAmount) * BigInt(10000 - cfg.slippage) / 10000n;
   if (BigInt(q.otherAmountThreshold) < floor || BigInt(q.otherAmountThreshold) > BigInt(q.outAmount))
     throw new UserError('Quote minimum output is outside configured limits.');
-  if (live && q.router === 'jupiterz')
-    throw new UserError('Jupiter returned an unsupported RFQ route despite its exclusion. No swap was submitted.');
-  if (live && !q.transaction)
-    throw new UserError(q.taker ? 'Jupiter returned a price but no executable transaction for this wallet. No swap was submitted; retry when a route is available.' : 'Jupiter returned a price-only quote without a wallet. Unlock your bot wallet before live trading.');
-  if (live && !q.requestId)
-    throw new UserError('Jupiter returned a transaction without its execution request ID. No swap was submitted; request a fresh route.');
+  if (live && (!q.transaction || !q.requestId || q.router === 'jupiterz'))
+    throw new UserError('No supported executable route.');
   return q;
 }
 
@@ -242,16 +227,14 @@ export class Engine {
     const input = side === 'buy' ? this.cfg.quote : this.cfg.base, output = side === 'buy' ? this.cfg.base : this.cfg.quote;
     const amount = side === 'buy' ? this.cfg.tradeSize : this.position()?.amount;
     if (!amount) throw new UserError('No strategy position to sell.');
-    if (this.cfg.mode === 'live' && !this.wallet) throw new UserError('Unlock your bot wallet before live trading or closing a position.');
-    const balances = await this.balances();
-    if (BigInt(balances[input] || '0') < BigInt(amount)) throw new UserError(`Insufficient ${input} balance in the ${this.cfg.mode} wallet for this trade.`);
-    if (!allowed()) return 'Stopped before trade submission.';
     const fetchedAt = this.now();
     const q = validateQuote(await this.jupiter.quote(input, output, amount, this.cfg.mode === 'live' ? this.wallet?.address : undefined), input, output, amount, this.cfg, this.cfg.mode === 'live');
     if (this.cfg.mode === 'live' && q.taker !== this.wallet.address) throw new UserError('Quote wallet mismatch.');
     const notional = BigInt(side === 'buy' ? amount : q.outAmount);
     // Entry limits must never trap an existing position after a price increase.
     if (side === 'buy') this.budget(notional);
+    const balances = await this.balances();
+    if (BigInt(balances[input]) < BigInt(amount)) throw new UserError(`Insufficient ${input} balance.`);
     if (this.cfg.mode === 'live') {
       const fees = ['signatureFeeLamports', 'prioritizationFeeLamports', 'rentFeeLamports'].reduce((sum, key) => {
         if (!Number.isSafeInteger(q[key]) || q[key] < 0) throw new UserError('Missing or invalid network fee estimate.');
