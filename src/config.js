@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 export const TOKENS = Object.freeze({
+  USDT: { mint: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', decimals: 6 },
   cbBTC: { mint: 'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij', decimals: 8 },
   USDC: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6 },
   SOL: { mint: 'So11111111111111111111111111111111111111112', decimals: 9 },

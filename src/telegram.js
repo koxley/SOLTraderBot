@@ -1,7 +1,7 @@
 import { jsonRequest } from './providers.js';
 import { UserError, format } from './config.js';
 
-export const HELP = `SOL TRADER — automatic SOL/cbBTC trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only cbBTC bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
+export const HELP = `SOL TRADER — automatic SOL-funded token trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only the selected asset bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
 
 export class Telegram {
   constructor(cfg, engine, publicUrl) { Object.assign(this, { cfg, engine, publicUrl }); this.stopped = false; }

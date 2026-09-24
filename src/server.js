@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { UserError, format } from './config.js';
 import { strategySettings } from './strategy.js';
 import { validateQuote } from './engine.js';
+import { ASSETS, resolveAsset } from './assets.js';
 
 async function readSettings(req) {
   let size = 0; const parts = [];
@@ -41,7 +42,7 @@ export function snapshot(engine) {
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
   const last = samples.at(-1);
-  return { base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
+  return { pair: cfg.pair, assets: ASSETS, base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
     price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
     chartInterval: 15,
@@ -61,11 +62,13 @@ export function snapshot(engine) {
   };
 }
 
-export function appServer(engine, { token, owner, demo = false, publicUrl = '', vault = null, clock = Date.now }) {
+export function appServer(engine, { token, owner, demo = false, publicUrl = '', vault = null, clock = Date.now, assetResolver = resolveAsset }) {
   const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
   let lastAction = 0, walletBusy = false;
   let priceRequest = null, lastPrice = null;
+  let assetBusy = false;
   async function marketPrice() {
+    if (assetBusy) throw new UserError('Asset change in progress.');
     if (priceRequest) return priceRequest;
     if (lastPrice && clock() - lastPrice.time < 4500) return lastPrice;
     priceRequest = (async () => {
@@ -73,7 +76,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       const amount = (10n ** BigInt(cfg.tokens[cfg.base].decimals)).toString();
       const q = validateQuote(await engine.jupiter.quote(cfg.base, cfg.quote, amount), cfg.base, cfg.quote, amount, cfg);
       const now = clock();
-      lastPrice = { price: Number(q.outAmount) / 10 ** cfg.quoteDecimals, time: now };
+      lastPrice = { pair: cfg.pair, price: Number(q.outAmount) / 10 ** cfg.quoteDecimals, time: now };
       const chart = engine.store.get(chartKey) || [];
       // Display sampling is independent of trading, EMA warm-up and strategy intervals.
       const bucket = Math.floor(now / 15000) * 15000;
@@ -122,6 +125,17 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
         if (path !== '/api/stop' && Date.now() - lastAction < 750) return reply(429, { error: 'Please wait a moment.' });
         lastAction = Date.now();
         switch (path) {
+          case '/api/asset': {
+            const input = await readSettings(req);
+            if (assetBusy) throw new UserError('Asset change already in progress.');
+            assetBusy = true;
+            try {
+              if (priceRequest) await priceRequest.catch(() => {});
+              await engine.changeAsset(input, assetResolver);
+              lastPrice = null;
+            } finally { assetBusy = false; }
+            break;
+          }
           case '/api/mode': {
             const input = await readSettings(req);
             if (demo && input.mode === 'live') throw new UserError('Live trading is disabled in this simulated preview. Open your deployed Telegram app.');

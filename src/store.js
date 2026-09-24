@@ -13,6 +13,7 @@ export class Store {
   put(order) { this.db.prepare('INSERT OR REPLACE INTO orders VALUES (?, ?)').run(order.id, JSON.stringify(order)); return order; }
   order(id) { const row = this.db.prepare('SELECT data FROM orders WHERE id=?').get(id); return row && JSON.parse(row.data); }
   orders() { return this.db.prepare('SELECT data FROM orders ORDER BY rowid DESC').all().map(r => JSON.parse(r.data)); }
+  livePositionKeys() { return this.db.prepare('SELECT key, value FROM kv').all().filter(r => /(^|:)live:position$/.test(r.key) && JSON.parse(r.value)).map(r => r.key); }
   atomic(fn) {
     this.db.exec('BEGIN IMMEDIATE');
     try { const value = fn(); this.db.exec('COMMIT'); return value; }

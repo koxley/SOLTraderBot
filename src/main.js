@@ -34,8 +34,8 @@ try {
   const vault = new Vault(cfg);
   const wallet = cfg.keyPath ? vault.load() : null;
   if (wallet) await wallet.verifyNetwork();
-  await verifyMint(cfg);
   engine = new Engine(cfg, store, new Jupiter(cfg), wallet);
+  await verifyMint(cfg);
   telegram = new Telegram(cfg, engine, publicUrl);
   await telegram.setup();
   server = appServer(engine, { token: cfg.token, owner: cfg.owner, publicUrl, vault });

@@ -18,7 +18,7 @@ export function validateStrategy(input, pair = 'CBBTC_SOL') {
     return String(Math.round(n));
   };
   try {
-    const cfg = config({ TRADING_PAIR: pair, EMA_FAST: String(input.fast), EMA_SLOW: String(input.slow), SAMPLE_SECONDS: String(input.interval),
+    const cfg = config({ TRADING_PAIR: pair.startsWith('TOKEN_') ? 'CBBTC_SOL' : pair, EMA_FAST: String(input.fast), EMA_SLOW: String(input.slow), SAMPLE_SECONDS: String(input.interval),
       [pair === 'SOL_USDC' ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL']: String(input.size), STOP_LOSS_BPS: bps(input.stopLoss), TAKE_PROFIT_BPS: bps(input.takeProfit),
       SLIPPAGE_BPS: bps(input.slippage), [pair === 'SOL_USDC' ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL']: String(input.maxTrade), [pair === 'SOL_USDC' ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL']: String(input.maxDaily) }, false);
     if (BigInt(cfg.tradeSize) > BigInt(cfg.maxTrade) || BigInt(cfg.maxTrade) > BigInt(cfg.maxDaily))

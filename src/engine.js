@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
+import { assetConfig, resolveAsset } from './assets.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
 const positiveInteger = n => typeof n === 'string' && /^\d+$/.test(n) && BigInt(n) > 0n;
@@ -45,6 +46,8 @@ export function signal(samples, position, cfg) {
 
 export class Engine {
   constructor(cfg, store, jupiter, wallet = null, now = () => Date.now()) {
+    const selectedAsset = store.get('selectedAsset');
+    if (selectedAsset) Object.assign(cfg, assetConfig(cfg, selectedAsset));
     Object.assign(this, { cfg, store, jupiter, wallet, now });
     this.busy = false;
     this.stopping = false;
@@ -53,7 +56,7 @@ export class Engine {
     this.defaultStrategy = strategySettings(cfg);
     // Never interpret a position from a different trading direction as this market.
     const otherPairs = ['DOGE_SOL', 'SOL_USDC', 'USDC_SOL', 'CBBTC_SOL'].filter(pair => pair !== cfg.pair);
-    if (otherPairs.some(pair => store.get(`${pair === 'DOGE_SOL' ? '' : pair + ':'}live:position`)) ||
+    if (store.livePositionKeys().some(key => key !== `${cfg.pair === 'DOGE_SOL' ? '' : cfg.pair + ':'}live:position`) || otherPairs.some(pair => store.get(`${pair === 'DOGE_SOL' ? '' : pair + ':'}live:position`)) ||
         store.orders().some(o => o.mode === 'live' && (o.pair || 'DOGE_SOL') !== cfg.pair && unresolved.has(o.status)))
       throw new Error('Close or reconcile the legacy DOGE or other market live position before changing trading direction.');
     if (store.get(`${cfg.pair === 'DOGE_SOL' ? '' : cfg.pair + ':'}live:position`) ||
@@ -65,7 +68,7 @@ export class Engine {
         if (store.get(target) === undefined && previous !== undefined) store.set(target, previous);
       }
     }
-    if (!store.get(this.paperKey())) store.set(this.paperKey(), cfg.paper);
+    if (!store.get(this.paperKey())) store.set(this.paperKey(), { ...cfg.paper, [cfg.base]: cfg.paper[cfg.base] || '0' });
     const marketKey = cfg.pair === 'DOGE_SOL' ? 'market' : `market:${cfg.pair}`;
     const market = cfg.pair === 'DOGE_SOL' ? `${cfg.tokens.DOGE.mint}:${cfg.tokens.DOGE.decimals}` : `${cfg.tokens[cfg.base].mint}:${cfg.tokens[cfg.quote].mint}`;
     const existingMarket = this.store.get(marketKey);
@@ -87,6 +90,34 @@ export class Engine {
       if (reset) this.store.set(this.key('samples'), []);
     });
     Object.assign(this.cfg, next);
+  }
+  async changeAsset(input, resolve = resolveAsset) {
+    if (this.cfg.quote !== 'SOL') throw new UserError('Asset selection requires SOL-funded trading.');
+    if (this.active() || this.busy || this.closing || this.store.orders().some(o => unresolved.has(o.status)))
+      throw new UserError('Stop the bot and settle all trades before changing asset.');
+    const prefix = this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':';
+    if (['paper', 'live'].some(mode => this.store.get(`${prefix}${mode}:position`)))
+      throw new UserError('Close your paper and live positions before changing asset.');
+    const generation = this.generation;
+    this.busy = true;
+    try {
+      const resolved = await resolve(input, this.cfg);
+      const asset = this.store.get(`asset:${resolved.mint}`) || resolved;
+      const next = assetConfig(this.cfg, asset);
+      if (generation !== this.generation || this.closing) throw new UserError('Asset change cancelled. Try again while stopped.');
+      const settings = validateStrategy(this.store.get(`${next.pair}:${this.cfg.mode}:strategy`) || strategySettings(this.cfg), next.pair);
+      const startingBalance = this.store.get(this.key('startingBalance')) || '1000000000';
+      this.store.atomic(() => {
+        this.store.set('selectedAsset', asset);
+        this.store.set(`asset:${asset.mint}`, asset);
+        if (!this.store.get(`paper:${next.pair}`)) this.store.set(`paper:${next.pair}`, { SOL: startingBalance, [asset.symbol]: '0' });
+        if (this.store.get(`${next.pair}:paper:startingBalance`) === undefined) this.store.set(`${next.pair}:paper:startingBalance`, startingBalance);
+        this.store.set(`${next.pair}:${this.cfg.mode}:strategy`, strategySettings({ ...this.cfg, ...settings }));
+        this.store.set('lastError', '');
+      });
+      Object.assign(this.cfg, next, settings);
+      this.stop();
+    } finally { this.busy = false; }
   }
   key(name) { return `${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${this.cfg.mode}:${name}`; }
   paperKey() { return this.cfg.pair === 'DOGE_SOL' ? 'paper' : `paper:${this.cfg.pair}`; }
@@ -142,7 +173,7 @@ export class Engine {
   stop() { this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false); }
   requestClose() { this.stop(); this.closing = true; }
   active() { return !this.stopping && this.store.get('running') === true; }
-  async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', USDC: '0', DOGE: '0', cbBTC: '0' }; }
+  async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', [this.cfg.splToken]: '0' }; }
   budget(notional) {
     if (notional > BigInt(this.cfg.maxTrade)) throw new UserError('Per-trade limit exceeded. Adjust limits before restarting.');
     const day = new Date(this.now()).toISOString().slice(0, 10);
