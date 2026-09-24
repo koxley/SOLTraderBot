@@ -10,6 +10,7 @@ let settingsDirty = false, savingSettings = false;
 let assetDirty = false, savingAsset = false;
 let recentSince = Date.now();
 let savingBalance = false;
+let chartLotId = '';
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
   for (const [key, value] of Object.entries(settings)) { const field = $(`setting-${key}`); if (field) field.value = value; }
@@ -46,7 +47,7 @@ function render(s) {
   text('asset-icon', market.asset === 'cbBTC' ? '₿' : market.asset === 'ETH' ? 'Ξ' : market.asset.slice(0, 1));
   text('price-label', `${market.asset} price in ${market.reference}`);
   text('position-symbol', market.asset);
-  text('position-heading', tracking ? 'Tracker signal' : 'Open position');
+  text('position-heading', tracking ? 'Tracker signal' : 'Open buys');
   text('position-empty-title', tracking ? (s.tracker?.state || 'Warming up').toUpperCase() : 'No open position');
   text('position-help', tracking ? `${market.asset} is observed against ${market.reference}. Signals are informational and create no position.` : `The bot buys ${s.base} with SOL when its entry signal fires.`);
   text('deposit-title', `Deposit SOL or ${s.base}`);
@@ -83,11 +84,11 @@ function render(s) {
   $('close').disabled = tracking || actionBusy || s.closing || !!s.pending || (!s.position && !s.busy) || (s.mode === 'live' && !s.wallet);
   $('reconcile').hidden = !s.pending;
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
-  text('position-tag', tracking ? 'NO TRADES' : s.position ? '1 OPEN' : 'NO POSITION');
+  text('position-tag', tracking ? 'NO TRADES' : s.position ? `${s.positions?.length || 1} OPEN BUY${s.positions?.length === 1 ? '' : 'S'}` : 'NO POSITION');
   if (s.position) { text('position-amount', number(s.position.amount, 8)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
   text('strategy-name', strategyNames[s.strategy.type || 'ema']);
   text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
-  text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.size + ' SOL'); text('stop-loss', tracking ? '—' : s.strategy.stopLoss + '%'); text('take-profit', tracking ? '—' : s.strategy.takeProfit + '%');
+  text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.sizePercent + '%'); text('stop-loss', tracking ? '—' : s.strategy.stopLoss + '%'); text('take-profit', tracking ? '—' : s.strategy.takeProfit + '%');
   text('strategy-summary-help', tracking ? 'Signals update the tracker only. They are not orders or trading recommendations.' : 'Exits are checked at each sample while running. They are not exchange-held orders or guaranteed prices.');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
   text('mint-label', market.asset + ' mint: ' + s.assetMint);
@@ -102,14 +103,34 @@ function render(s) {
   $('balance-amount').disabled = locked || savingBalance || actionBusy;
   $('save-balance').disabled = locked || savingBalance || actionBusy;
   if (tracking) { text('available', '—'); text('available-note', 'Tracking uses no funds'); }
-  else text('available-note', s.mode === 'paper' ? `SOL · resets to ${s.paperStartingBalance || '1'} on reopen/start` : 'SOL · actual wallet balance');
+  else text('available-note', s.mode === 'paper' ? `SOL · resets to ${s.paperStartingBalance || '1'} on reopen/start` : 'SOL · available after gas reserve and fee buffer');
   const strategyLocked = s.closing || !!s.pending;
   $('strategy-fields').disabled = strategyLocked || savingSettings;
   $('save-strategy').disabled = strategyLocked || savingSettings;
   $('reset-strategy').disabled = savingSettings;
   $('settings-lock').hidden = !strategyLocked;
+  renderLots(s.positions || []);
   renderTrades(s.trades, 'trade-list'); renderTrades(s.trades.filter(trade => trade.time >= recentSince).slice(0, 5), 'dashboard-trade-list'); drawChart(s.samples);
 }
+function renderLots(lots) {
+  const list = $('position-lots'); list.replaceChildren();
+  for (const lot of lots) {
+    const row = document.createElement('p'); row.className = 'footnote';
+    row.textContent = `${lot.label} · ${number(lot.amount, 8)} ${state.base} · cost ${number(lot.cost, 8)} SOL · TP ${number(lot.takeProfitPrice, 9)} · SL ${number(lot.stopPrice, 9)} SOL${lot.slTrailing ? ' (trailing)' : ''}`;
+    list.append(row);
+  }
+  if (!lots.length) list.textContent = 'No open buys.';
+  const select = $('chart-lot');
+  if (!lots.some(lot => lot.id === chartLotId)) chartLotId = lots.at(-1)?.id || '';
+  const revision = JSON.stringify(lots.map(lot => [lot.id, lot.label]));
+  if (select.dataset.revision !== revision) {
+    select.replaceChildren();
+    for (const lot of lots) { const option = document.createElement('option'); option.value = lot.id; option.textContent = lot.label; select.append(option); }
+    select.dataset.revision = revision;
+  }
+  select.value = chartLotId; $('chart-lot-label').hidden = lots.length < 2;
+}
+$('chart-lot').addEventListener('change', event => { chartLotId = event.target.value; if (state) drawChart(state.samples); });
 function renderTrades(trades, target) {
   const list = $(target);
   const revision = JSON.stringify(trades);
@@ -139,14 +160,15 @@ function drawChart(samples) {
   const trades = state?.chartTrades || state?.trades || [];
   const tracking = state?.market && !state.market.executable;
   const reference = state?.market?.reference || state?.quote || 'SOL';
-  const previewLevels = !state?.position;
-  const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
+  const chartPosition = state?.positions?.find(lot => lot.id === chartLotId) || state?.positions?.at(-1) || state?.position;
+  const previewLevels = !chartPosition;
+  const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(chartPosition.cost) / Number(chartPosition.amount);
   const levels = !tracking && Number.isFinite(entry) && entry > 0 ? [
     { name: 'TP', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
-    { name: 'SL', price: previewLevels ? entry * (1 - state.strategy.stopLoss / 100) : (state.position.stopPrice ?? entry * (1 - state.strategy.stopLoss / 100)), color: '#f09391', offset: 12 }
+    { name: 'SL', price: previewLevels ? entry * (1 - state.strategy.stopLoss / 100) : (chartPosition.stopPrice ?? entry * (1 - state.strategy.stopLoss / 100)), color: '#f09391', offset: 12 }
   ] : [];
   const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${reference}`).join(' · ');
-  text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : state.position.slTrailing ? 'Open position · trailing SL active. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
+  text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : chartPosition.slTrailing ? `${chartPosition.label || 'Open position'} · trailing SL active. ` : `${chartPosition.label || 'Open position'} · entry-based levels. `}${levelText}` : 'Waiting for a price to display TP / SL levels.');
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -212,7 +234,7 @@ async function refreshPrice() {
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
 }
-async function balances() { if (state?.market && !state.market.executable) return; try { const b = await api('balance'); text('available', number(Number(b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
+async function balances() { if (state?.market && !state.market.executable) return; try { const b = await api('balance'); text('available', number(Number(b.availableToTrade ?? b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
 async function wallet() {
   try {
     const w = await api('wallet');

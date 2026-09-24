@@ -19,3 +19,5 @@
 #realized.green{color:#4ade80}
 
 #setting-type{width:100%;padding:14px;border:1px solid #384352;border-radius:9px;background:#0c1119;color:var(--text);font:inherit;margin-bottom:20px}#setting-type:focus-visible{outline:2px solid var(--green);outline-offset:4px}
+
+#chart-lot{padding:8px;border:1px solid #384352;border-radius:8px;background:#0c1119;color:var(--text)}#chart-lot-label{margin-top:12px}
