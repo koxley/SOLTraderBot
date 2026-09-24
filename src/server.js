@@ -41,19 +41,21 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
+  const market = engine.market(), referenceDecimals = cfg.tokens[market.reference].decimals;
   const stop = p ? stopLevel(p, cfg) : null;
   const samples = engine.store.get(engine.key('samples')) || [];
   const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n);
   const last = samples.at(-1);
-  return { pair: cfg.pair, assets: ASSETS, base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
+  return { pair: cfg.pair, assets: ASSETS, base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, marketType: cfg.marketType || 'pair', trackedAsset: cfg.trackedAsset, market, marketKey: `${cfg.marketType || 'pair'}:${market.asset}:${market.reference}`, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
-    price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
+    assetMint: cfg.tokens[market.asset].mint, tracker: engine.store.get(engine.key('tracker')) || null,
+    price: last ? Number(last.price) / 10 ** referenceDecimals : null,
     chartInterval: 15,
-    samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
+    samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** referenceDecimals })),
     warmup: Math.min(samples.length, warmup(cfg)), warmupRequired: warmup(cfg),
-    position: p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
+    position: market.executable && p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
       stopPrice: Number(stop.numerator) / Number(stop.denominator) / 10 ** cfg.quoteDecimals,
       slTrailing: Boolean(p.slHigh),
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
@@ -77,13 +79,14 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
   async function marketPrice() {
     if (assetBusy) throw new UserError('Asset change in progress.');
     if (priceRequest) return priceRequest;
-    if (lastPrice && clock() - lastPrice.time < 4500) return lastPrice;
+    const selected = engine.market(), selectedKey = `${engine.cfg.marketType || 'pair'}:${selected.asset}:${selected.reference}`;
+    if (lastPrice?.marketKey === selectedKey && clock() - lastPrice.time < 4500) return lastPrice;
     priceRequest = (async () => {
-      const cfg = engine.cfg, chartKey = engine.key('chartSamples');
-      const amount = (10n ** BigInt(cfg.tokens[cfg.base].decimals)).toString();
-      const q = validateQuote(await engine.jupiter.quote(cfg.base, cfg.quote, amount), cfg.base, cfg.quote, amount, cfg);
+      const cfg = engine.cfg, market = engine.market(), chartKey = engine.key('chartSamples');
+      const amount = (10n ** BigInt(cfg.tokens[market.asset].decimals)).toString();
+      const q = validateQuote(await engine.jupiter.quote(market.asset, market.reference, amount), market.asset, market.reference, amount, cfg);
       const now = clock();
-      lastPrice = { pair: cfg.pair, price: Number(q.outAmount) / 10 ** cfg.quoteDecimals, time: now };
+      lastPrice = { pair: cfg.pair, marketKey: `${cfg.marketType || 'pair'}:${market.asset}:${market.reference}`, price: Number(q.outAmount) / 10 ** cfg.tokens[market.reference].decimals, time: now };
       const chart = engine.store.get(chartKey) || [];
       // Display sampling is independent of trading, EMA warm-up and strategy intervals.
       const bucket = Math.floor(now / 15000) * 15000;

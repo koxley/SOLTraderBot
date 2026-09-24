@@ -1,7 +1,7 @@
-import { config, format, UserError } from './config.js';
+import { config, format, UserError, TRACKED_ASSETS } from './config.js';
 
 export function strategySettings(cfg) {
-  return { type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
+  return { marketType: cfg.marketType || 'pair', asset: cfg.trackedAsset || cfg.base, type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
     size: format(cfg.tradeSize, cfg.quoteDecimals), stopLoss: cfg.stopLoss / 100,
     takeProfit: cfg.takeProfit / 100, slippage: cfg.slippage / 100,
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals), maxDaily: format(cfg.maxDaily, cfg.quoteDecimals) };
@@ -9,11 +9,17 @@ export function strategySettings(cfg) {
 
 export function validateStrategy(input, pair = 'CBBTC_SOL') {
   const keys = ['fast', 'slow', 'interval', 'size', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'marketType', 'asset', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
       keys.some(k => !Object.hasOwn(input, k) || !['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))
     throw new UserError('Provide all nine strategy settings as positive decimal numbers.');
   const strategyType = Object.hasOwn(input, 'type') ? input.type : 'ema';
   if (!['ema', 'sma', 'rsi', 'bollinger'].includes(strategyType)) throw new UserError('Choose a supported strategy.');
+  const marketType = Object.hasOwn(input, 'marketType') ? input.marketType : 'pair';
+  if (!['pair', 'track'].includes(marketType)) throw new UserError('Choose paired trading or single-coin tracking.');
+  const pairAsset = pair === 'SOL_USDC' ? 'SOL' : pair === 'USDC_SOL' ? 'USDC' : pair === 'DOGE_SOL' ? 'DOGE' : pair === 'CBBTC_SOL' ? 'cbBTC' : null;
+  const selectedAsset = Object.hasOwn(input, 'asset') ? input.asset : pairAsset;
+  if (marketType === 'track' && !TRACKED_ASSETS.includes(selectedAsset)) throw new UserError('Choose SOL, ETH, DOGE, XRP, USDC, or USDT for tracking.');
+  const trackedAsset = TRACKED_ASSETS.includes(selectedAsset) ? selectedAsset : 'SOL';
   const numeric = (key, fallback, min, max, integer = false) => {
     const value = Object.hasOwn(input, key) ? input[key] : fallback;
     const n = Number(value);
@@ -34,7 +40,7 @@ export function validateStrategy(input, pair = 'CBBTC_SOL') {
       SLIPPAGE_BPS: bps(input.slippage), [pair === 'SOL_USDC' ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL']: String(input.maxTrade), [pair === 'SOL_USDC' ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL']: String(input.maxDaily) }, false);
     if (BigInt(cfg.tradeSize) > BigInt(cfg.maxTrade) || BigInt(cfg.maxTrade) > BigInt(cfg.maxDaily))
       throw new UserError('Trade size must be ≤ maximum entry ≤ daily limit.');
-    return { ...extra, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
+    return { ...extra, marketType, trackedAsset, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
       stopLoss: cfg.stopLoss, takeProfit: cfg.takeProfit, slippage: cfg.slippage, maxTrade: cfg.maxTrade, maxDaily: cfg.maxDaily };
   } catch (error) { throw new UserError(error.message); }
 }

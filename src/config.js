@@ -5,7 +5,11 @@ export const TOKENS = Object.freeze({
   cbBTC: { mint: 'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij', decimals: 8 },
   USDC: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6 },
   SOL: { mint: 'So11111111111111111111111111111111111111112', decimals: 9 },
+  ETH: { mint: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs', decimals: 8 },
+  DOGE: { mint: 'DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R', decimals: 8 },
+  XRP: { mint: '6UpQcMAb5xMzxc7ZfPaVMgx3KqsvKZdT5U718BzD5We2', decimals: 6 },
 });
+export const TRACKED_ASSETS = Object.freeze(['SOL', 'ETH', 'DOGE', 'XRP', 'USDC', 'USDT']);
 
 export class UserError extends Error {}
 
@@ -54,7 +58,7 @@ export function config(env = process.env, requireTelegram = true) {
   const slow = integer('EMA_SLOW', 12, 3, 200);
   if (fast >= slow) throw new Error('EMA_FAST must be less than EMA_SLOW.');
   const dogeDecimals = integer('DOGE_DECIMALS', 8, 0, 12);
-  const dogeMint = env.DOGE_MINT || '';
+  const dogeMint = env.DOGE_MINT || TOKENS.DOGE.mint;
   if (dogeMint && (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(dogeMint) || dogeMint === TOKENS.SOL.mint))
     throw new Error('DOGE_MINT must be the verified wrapped DOGE mint on Solana.');
   return {
@@ -65,7 +69,8 @@ export function config(env = process.env, requireTelegram = true) {
     slippage: integer('SLIPPAGE_BPS', 50, 1, 300),
     ttl: integer('QUOTE_TTL_SECONDS', 20, 5, 30) * 1000,
     tokens: { ...TOKENS, DOGE: { mint: dogeMint, decimals: dogeDecimals } },
-    pairReady: !legacy || Boolean(dogeMint),
+    pairReady: true,
+    marketType: 'pair', trackedAsset: base,
     encryptionKey: '', // Supplied by the authenticated owner at wallet unlock, never from .env.
     maxTrade: amount(inverse ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL', inverse ? '1' : '0.1', quoteDecimals), maxDaily: amount(inverse ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL', inverse ? '5' : '0.5', quoteDecimals),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),

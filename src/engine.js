@@ -47,6 +47,16 @@ export function signal(samples, position, cfg) {
   return null;
 }
 
+export function trackingSignal(samples, cfg) {
+  if (samples.length < warmup(cfg)) return { state: 'warming', reason: 'Collecting price samples' };
+  const decision = signal(samples, null, cfg);
+  if (decision) return { state: 'entry', reason: decision.reason };
+  const prices = samples.map(s => Number(s.price));
+  if ((cfg.strategyType || 'ema') === 'ema')
+    return { state: ema(prices, cfg.fast) >= ema(prices, cfg.slow) ? 'bullish' : 'bearish', reason: 'Current EMA direction' };
+  return { state: 'watching', reason: `Monitoring ${(cfg.strategyType || 'ema').toUpperCase()} conditions` };
+}
+
 export class Engine {
   constructor(cfg, store, jupiter, wallet = null, now = () => Date.now()) {
     const selectedAsset = store.get('selectedAsset');
@@ -87,11 +97,16 @@ export class Engine {
     if (this.busy || this.closing || this.pending().length)
       throw new UserError('Wait for the current trade to settle before changing the strategy.');
     const next = validateStrategy(settings, this.cfg.pair);
-    const reset = ['type', 'fast', 'slow', 'interval', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].some(k => strategySettings(next)[k] !== strategySettings(this.cfg)[k]);
+    const previousSettings = strategySettings(this.cfg), nextSettings = strategySettings(next);
+    const marketChanged = nextSettings.marketType !== previousSettings.marketType ||
+      (nextSettings.marketType === 'track' && nextSettings.asset !== previousSettings.asset);
+    if (marketChanged && this.position()) throw new UserError('Close the open position before changing between trading and tracking.');
+    const reset = marketChanged || ['type', 'fast', 'slow', 'interval', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].some(k => nextSettings[k] !== previousSettings[k]);
     this.store.atomic(() => {
-      this.store.set(this.key('strategy'), strategySettings(next));
-      if (reset) this.store.set(this.key('samples'), []);
+      this.store.set(this.key('strategy'), nextSettings);
+      if (reset) { this.store.set(this.key('samples'), []); this.store.set(this.key('chartSamples'), []); this.store.set(this.key('tracker'), null); }
     });
+    if (marketChanged) this.stop();
     Object.assign(this.cfg, next);
   }
   async configureWhenReady(settings) {
@@ -132,6 +147,12 @@ export class Engine {
   key(name) { return `${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${this.cfg.mode}:${name}`; }
   paperKey() { return this.cfg.pair === 'DOGE_SOL' ? 'paper' : `paper:${this.cfg.pair}`; }
   orders() { return this.store.orders().filter(o => (o.pair || 'DOGE_SOL') === this.cfg.pair); }
+  market() {
+    if ((this.cfg.marketType || 'pair') === 'pair')
+      return { asset: this.cfg.base, reference: this.cfg.quote, executable: true };
+    const asset = this.cfg.trackedAsset;
+    return { asset, reference: asset === 'USDC' ? 'USDT' : 'USDC', executable: false };
+  }
   switchMode(mode, acknowledged = false) {
     if (!['paper', 'live'].includes(mode)) throw new UserError('Choose paper or live mode.');
     if (mode === this.cfg.mode) return;
@@ -139,7 +160,7 @@ export class Engine {
       throw new UserError('Stop the bot and reconcile unsettled trades before switching mode.');
     if (this.cfg.mode === 'live' && this.position())
       throw new UserError('Close your live position before switching to paper mode.');
-    if (mode === 'live' && (!acknowledged || !this.wallet))
+    if (mode === 'live' && this.market().executable && (!acknowledged || !this.wallet))
       throw new UserError('Unlock your wallet and acknowledge real-fund trading before selecting live.');
     const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair);
     if (mode === 'live') this.bindWallet(this.wallet.address);
@@ -169,19 +190,19 @@ export class Engine {
     this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: this.store.get(this.key('startingBalance')) ?? (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
   }
   start() {
-    if (!this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
-    if (this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
+    if (this.market().executable && !this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
+    if (this.market().executable && this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
-    if (BigInt(this.cfg.tradeSize) > BigInt(this.cfg.maxTrade)) throw new UserError('TRADE_SIZE_SOL exceeds MAX_TRADE_SOL.');
-    this.resetPaperSOL();
+    if (this.market().executable && BigInt(this.cfg.tradeSize) > BigInt(this.cfg.maxTrade)) throw new UserError('TRADE_SIZE_SOL exceeds MAX_TRADE_SOL.');
+    if (this.market().executable) this.resetPaperSOL();
     this.stopping = false;
     this.store.set('running', true);
     this.store.set('errors', 0);
     this.store.set('lastError', '');
   }
   stop() { this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false); }
-  requestClose() { this.stop(); this.closing = true; }
+  requestClose() { if (!this.market().executable) throw new UserError('Single-coin tracking has no position to close.'); this.stop(); this.closing = true; }
   active() { return !this.stopping && this.store.get('running') === true; }
   async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', [this.cfg.splToken]: '0' }; }
   budget(notional) {
@@ -206,11 +227,19 @@ export class Engine {
       let samples = this.store.get(this.key('samples')) || [];
       if (samples.length && now - samples.at(-1).time < this.cfg.sampleMs) return null;
       if (samples.length && now - samples.at(-1).time > this.cfg.sampleMs * 3) samples = [];
-      const q = validateQuote(await this.jupiter.quote(this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString()), this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString(), this.cfg);
+      const market = this.market();
+      const amount = (10n ** BigInt(this.cfg.tokens[market.asset].decimals)).toString();
+      const q = validateQuote(await this.jupiter.quote(market.asset, market.reference, amount), market.asset, market.reference, amount, this.cfg);
       samples.push({ time: this.now(), price: q.outAmount });
       samples = samples.slice(-warmup(this.cfg) * 10);
       this.store.set(this.key('samples'), samples);
       this.store.set('lastTick', this.now());
+      if (!market.executable) {
+        const tracked = trackingSignal(samples, this.cfg);
+        this.store.set(this.key('tracker'), tracked);
+        this.store.set('errors', 0);
+        return tracked.state === 'entry' ? `${market.asset} tracking signal: ${tracked.reason}. No trade was submitted.` : null;
+      }
       const position = this.position();
       if (position && this.active()) {
         const updated = advanceStop(position, q.outAmount, this.cfg);
@@ -231,6 +260,7 @@ export class Engine {
     } finally { this.busy = false; }
   }
   async trade({ side, reason }, forceExit = false) {
+    if (!this.market().executable) throw new UserError('Single-coin tracking never submits trades.');
     const generation = this.generation;
     const allowed = () => generation === this.generation && (this.active() || forceExit);
     const input = side === 'buy' ? this.cfg.quote : this.cfg.base, output = side === 'buy' ? this.cfg.base : this.cfg.quote;
@@ -330,6 +360,8 @@ export class Engine {
   status() {
     const samples = this.store.get(this.key('samples')) || [];
     const p = this.position();
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${this.cfg.base}/${this.cfg.quote} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}`;
+    const market = this.market();
+    const heading = market.executable ? `${market.asset}/${market.reference} trading` : `${market.asset} single-coin tracking (${market.reference} reference; no trades)`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
   }
 }

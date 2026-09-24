@@ -1,10 +1,10 @@
-> **Current release: SOL/cbBTC.** See [SOL-CBBTC.md](SOL-CBBTC.md) for current mint, trading direction, defaults and deposits. Older DOGE/USDC instructions below describe legacy markets.
+> **Current release:** selectable SOL-funded paired trading plus no-trade single-coin tracking. See [SOL-CBBTC.md](SOL-CBBTC.md) for the default cbBTC market.
 
 # SOL TRADER
 
-A self-hosted, single-owner Telegram Mini App for automatic SOL / wrapped DOGE spot trading on Solana. Deposit SOL; the strategy buys DOGE with SOL and sells DOGE back to SOL. The user controls **Start**, **Stop**, and **Close Open Positions**. There are no manual trade commands.
+A self-hosted, single-owner Telegram Mini App for automatic SOL-funded spot trading on Solana, plus individual price and strategy-signal tracking for SOL, wrapped ETH, wrapped DOGE, wrapped XRP, USDC, and USDT. Paired trading buys the selected Solana token with SOL and sells it back to SOL. Single-coin tracking observes the selected coin without opening positions or submitting swaps. The user controls **Start**, **Stop**, and **Close Open Positions**. There are no manual trade commands.
 
-Configured mint: `DoGEV7LASBkQbibMc5k5vKnTZoMg423GpJ5QtJEGfm7R` (8 decimals). This is the mint supplied by the user. Mainnet account validation checks its SPL program and decimals; it does not certify a bridge, issuer, backing, or redemption rights. This app does not interact with the native Dogecoin network.
+The default paired asset is Coinbase Wrapped BTC; the Strategy page also supports preset and validated custom Solana tokens. Mainnet validation checks the SPL program, decimals, and Jupiter routes; it does not certify an issuer, backing, or redemption rights. Wrapped ETH, DOGE, and XRP are Solana tokens—the app does not interact with their native networks.
 
 ## Try the app locally
 
@@ -33,7 +33,7 @@ The included Dockerfile builds the app. Supply `.env` via your platform's secret
 
 Open **Wallet**, generate or enter your encryption key, save a backup, and select **Create wallet**. A new Solana keypair is generated on the server and encrypted with AES-256-GCM using the key you enter in Wallet. The server retains signing access so it can trade unattended; this is an operator-controlled hot wallet, not a browser-only wallet.
 
-The app displays the receiving address, Solana Pay QR code, copy button, confirmed on-chain SOL/DOGE balances, and a Solscan link. Transfer SOL to that address from an existing Solana wallet or withdraw SOL from an exchange over **Solana mainnet**. **Check deposit** refreshes balances; the screen also refreshes periodically. Funding is a normal on-chain transfer, not a card/fiat purchase. Native DOGE must not be sent to this Solana address.
+The app displays the receiving address, Solana Pay QR code, copy button, confirmed on-chain balances, and a Solscan link. Transfer SOL to that address from an existing Solana wallet or withdraw SOL from an exchange over **Solana mainnet**. **Check deposit** refreshes balances; the screen also refreshes periodically. Funding is a normal on-chain transfer, not a card/fiat purchase. Never send assets from another network to this Solana address.
 
 Before funding, back up `data/wallet.encrypted.json`, the database, and your encryption key separately. On Windows, restrict access to the app directory and `.env` to the service account; POSIX file mode flags alone do not configure Windows ACLs. Loss of both the running key and a recoverable backup means loss of access to funds. To recover into another wallet, explicitly export a local Solana keypair file:
 
@@ -45,16 +45,23 @@ The recovery command refuses to overwrite an existing file and does not print th
 
 ## Automatic strategy and controls
 
+Choose the market behavior in the authenticated **Strategy** tab:
+
+- **Paired trading** preserves the executable strategy and all current asset choices. It can buy and sell the selected token using SOL in paper or live mode.
+- **Single coin tracking — no trades** monitors SOL, ETH, DOGE, XRP, USDC, or USDT individually. It charts the selected coin and reports strategy signals, but never creates a position or submits a swap. Prices use USDC as the display reference, except USDC uses USDT. ETH, DOGE, and XRP refer to their listed Solana-wrapped tokens.
+
+Changing between paired trading and tracking clears the old market's samples so the selected strategy can warm up on comparable data, and leaves the bot stopped. An open paired position must be closed before changing modes. Existing saved strategies automatically remain in paired mode.
+
 | Control | Behavior |
 | --- | --- |
-| Start bot / `/start` | Monitor quotes and automatically enter/exit positions. |
-| Stop bot / `/stop` | Stop new submissions; keep the existing DOGE position. |
-| Close Open Positions / `/close` | Stop the strategy and sell its tracked DOGE position back to SOL. No automatic re-entry. |
+| Start bot / `/start` | Monitor quotes. Paired mode can enter/exit positions; tracking mode only reports signals. |
+| Stop bot / `/stop` | Stop new submissions or price tracking; keep any existing paired position. |
+| Close Open Positions / `/close` | Stop the strategy and sell its paired position back to SOL. No automatic re-entry. |
 | Check unsettled transaction / `/reconcile` | Query on-chain outcome without re-submitting a swap. |
 
-An already-submitted transaction cannot be cancelled. Close waits for an in-progress operation; an unknown outcome must be reconciled before closing. Externally deposited DOGE is not treated as an open strategy position and is not sold by Close. A restart always leaves the strategy stopped while preserving balances, position, and trade records.
+An already-submitted transaction cannot be cancelled. Close waits for an in-progress operation; an unknown outcome must be reconciled before closing. Externally deposited tokens are not treated as an open strategy position and are not sold by Close. A restart always leaves the strategy stopped while preserving balances, position, and trade records.
 
-Default strategy: one executable quote for one DOGE in SOL every 60 seconds, EMA 5/12 crossover entry, exit on fast EMA below slow EMA, a 3% loss threshold, or a 6% profit threshold. It requires 13 samples to warm up (about 13 minutes). Samples are observed quotes, not exchange OHLC candles. After a gap longer than three sample intervals, the EMA history warms up again; a tracked position can still trigger its price exits. Only one DOGE position is held at a time. The strategy is a configurable example, not a backtested profitability claim.
+The default paired strategy samples every 15 seconds and uses an EMA 5/12 crossover, a 2% trailing stop, and a 3% take-profit threshold. EMA, SMA, RSI, and Bollinger strategies are selectable. Tracking applies the selected indicator settings to one coin but does not use trade size, stop loss, or take profit. Samples are observed quotes, not exchange OHLC candles. After a long gap, indicator history warms up again; a paired position can still trigger its price exits. Only one strategy position is held at a time. These strategies are configurable examples, not backtested profitability claims.
 
 Strategy exits are checked only while the process is online and the bot is running. They are not on-chain limit orders and cannot guarantee an exit price. Quote outages, illiquidity, slippage, and network failures can prevent exits. A failed validation stops the bot and displays the reason. Generic transient failures stop it after three consecutive attempts.
 

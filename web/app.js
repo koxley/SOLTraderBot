@@ -1,6 +1,10 @@
 const tg = window.Telegram?.WebApp;
 tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
+const marketFields = document.createElement('div');
+marketFields.className = 'settings-grid';
+marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"><option>SOL</option><option>ETH</option><option>DOGE</option><option>XRP</option><option>USDC</option><option>USDT</option></select></label>';
+$('strategy-fields').prepend(marketFields);
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
 let assetDirty = false, savingAsset = false;
@@ -8,7 +12,7 @@ let recentSince = Date.now();
 let savingBalance = false;
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
-  for (const [key, value] of Object.entries(settings)) $(`setting-${key}`).value = value;
+  for (const [key, value] of Object.entries(settings)) { const field = $(`setting-${key}`); if (field) field.value = value; }
   updateStrategyFields();
 }
 const strategyNames = { ema: 'EMA crossover', sma: 'SMA crossover', rsi: 'RSI recovery', bollinger: 'Bollinger band recovery' };
@@ -33,14 +37,18 @@ async function api(path, method = 'GET', body) {
   return data;
 }
 function render(s) {
-  if (state?.pair !== s.pair) { livePrice = null; recentSince = Date.now(); settingsDirty = false; }
+  if (state?.marketKey !== s.marketKey) { livePrice = null; recentSince = Date.now(); settingsDirty = false; }
   state = s;
-  text('market-pair', `SOL / ${s.base}`);
-  text('market-name', `${s.base} · Solana`);
-  text('asset-icon', s.base === 'cbBTC' ? '₿' : s.base.slice(0, 1));
-  text('price-label', `${s.base} price in SOL`);
-  text('position-symbol', s.base);
-  text('position-help', `The bot buys ${s.base} with SOL when its entry signal fires.`);
+  const market = s.market || { asset: s.base, reference: s.quote, executable: true }, tracking = !market.executable;
+  text('market-pair', tracking ? market.asset : `${market.reference} / ${market.asset}`);
+  text('market-name', tracking ? `Single coin tracking · ${market.reference} reference` : `${market.asset} · Solana`);
+  text('market-tag', tracking ? 'TRACK ONLY' : 'SPOT');
+  text('asset-icon', market.asset === 'cbBTC' ? '₿' : market.asset === 'ETH' ? 'Ξ' : market.asset.slice(0, 1));
+  text('price-label', `${market.asset} price in ${market.reference}`);
+  text('position-symbol', market.asset);
+  text('position-heading', tracking ? 'Tracker signal' : 'Open position');
+  text('position-empty-title', tracking ? (s.tracker?.state || 'Warming up').toUpperCase() : 'No open position');
+  text('position-help', tracking ? `${market.asset} is observed against ${market.reference}. Signals are informational and create no position.` : `The bot buys ${s.base} with SOL when its entry signal fires.`);
   text('deposit-title', `Deposit SOL or ${s.base}`);
   if (!assetDirty && !savingAsset) {
     $('asset-preset').value = s.assets?.find(a => a.mint === s.tokenMint)?.symbol || 'custom';
@@ -57,37 +65,44 @@ function render(s) {
   $('trading-mode').value = s.mode;
   $('trading-mode').disabled = actionBusy || s.running || s.busy || s.closing || !!s.pending;
   renderPrice();
-  text('realized', (s.realized > 0 ? '+' : '') + number(s.realized, 6));
+  text('available-label', tracking ? 'Capital required' : 'Available to trade');
+  text('realized-label', tracking ? 'Execution' : 'Realized return');
+  text('realized', tracking ? '—' : (s.realized > 0 ? '+' : '') + number(s.realized, 6));
+  text('realized-note', tracking ? 'No swaps submitted' : 'SOL · before network fees');
   $('realized').className = s.realized > 0 ? 'green' : s.realized < 0 ? 'red' : '';
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
   text('status-pill', s.closing ? 'Closing' : s.running ? 'Running' : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
-  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? `Selling the bot’s ${s.base} position back to SOL. Trading will stay stopped.` : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for the selected strategy signals. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
+  text('status-detail', tracking ? (s.running ? `Monitoring ${market.asset}. Tracking mode never submits swaps.` : `Start monitoring ${market.asset}. Tracking mode never submits swaps.`) : s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? `Selling the bot’s ${s.base} position back to SOL. Trading will stay stopped.` : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for the selected strategy signals. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
+  text('status-help', tracking ? 'Stop pauses price monitoring. It never opens or closes a position.' : 'Stop pauses all trading and keeps your position open.');
   text('warmup-text', `${s.warmup} / ${s.warmupRequired} samples`);
   $('warmup-progress').max = s.warmupRequired; $('warmup-progress').value = s.warmup;
-  $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || !s.pairReady || (s.mode === 'live' && !s.wallet);
+  $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || (market.executable && (!s.pairReady || (s.mode === 'live' && !s.wallet)));
   $('stop').disabled = actionBusy || (!s.running && !s.closing && !s.busy);
-  $('close').disabled = actionBusy || s.closing || !!s.pending || (!s.position && !s.busy) || (s.mode === 'live' && !s.wallet);
+  $('close').hidden = tracking; $('position-action-help').hidden = tracking;
+  $('close').disabled = tracking || actionBusy || s.closing || !!s.pending || (!s.position && !s.busy) || (s.mode === 'live' && !s.wallet);
   $('reconcile').hidden = !s.pending;
   $('position-empty').hidden = !!s.position; $('position-data').hidden = !s.position;
-  text('position-tag', s.position ? '1 OPEN' : 'NO POSITION');
+  text('position-tag', tracking ? 'NO TRADES' : s.position ? '1 OPEN' : 'NO POSITION');
   if (s.position) { text('position-amount', number(s.position.amount, 8)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
   text('strategy-name', strategyNames[s.strategy.type || 'ema']);
   text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
-  text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
+  text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.size + ' SOL'); text('stop-loss', tracking ? '—' : s.strategy.stopLoss + '%'); text('take-profit', tracking ? '—' : s.strategy.takeProfit + '%');
+  text('strategy-summary-help', tracking ? 'Signals update the tracker only. They are not orders or trading recommendations.' : 'Exits are checked at each sample while running. They are not exchange-held orders or guaranteed prices.');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
-  text('mint-label', s.base + ' mint: ' + s.tokenMint);
+  text('mint-label', market.asset + ' mint: ' + s.assetMint);
   text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
   text('dashboard-trade-count', s.mode.toUpperCase());
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
   if (!settingsDirty && !savingSettings) fillSettings(s.strategy);
   const locked = s.running || s.busy || s.closing || !!s.pending;
-  $('edit-balance').hidden = s.mode !== 'paper';
+  $('edit-balance').hidden = tracking || s.mode !== 'paper';
   if (s.mode !== 'paper') $('balance-form').hidden = true;
   $('edit-balance').disabled = locked || savingBalance || actionBusy;
   $('balance-amount').disabled = locked || savingBalance || actionBusy;
   $('save-balance').disabled = locked || savingBalance || actionBusy;
-  text('available-note', s.mode === 'paper' ? `SOL · resets to ${s.paperStartingBalance || '1'} on reopen/start` : 'SOL · actual wallet balance');
+  if (tracking) { text('available', '—'); text('available-note', 'Tracking uses no funds'); }
+  else text('available-note', s.mode === 'paper' ? `SOL · resets to ${s.paperStartingBalance || '1'} on reopen/start` : 'SOL · actual wallet balance');
   const strategyLocked = s.closing || !!s.pending;
   $('strategy-fields').disabled = strategyLocked || savingSettings;
   $('save-strategy').disabled = strategyLocked || savingSettings;
@@ -122,14 +137,16 @@ function drawChart(samples) {
   const latestTime = samples.at(-1)?.time;
   samples = samples.filter(sample => sample.time >= latestTime - 15 * 60 * 1000).slice(-60);
   const trades = state?.chartTrades || state?.trades || [];
+  const tracking = state?.market && !state.market.executable;
+  const reference = state?.market?.reference || state?.quote || 'SOL';
   const previewLevels = !state?.position;
   const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
-  const levels = Number.isFinite(entry) && entry > 0 ? [
+  const levels = !tracking && Number.isFinite(entry) && entry > 0 ? [
     { name: 'TP', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
     { name: 'SL', price: previewLevels ? entry * (1 - state.strategy.stopLoss / 100) : (state.position.stopPrice ?? entry * (1 - state.strategy.stopLoss / 100)), color: '#f09391', offset: 12 }
   ] : [];
-  const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`).join(' · ');
-  text('chart-levels', levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : state.position.slTrailing ? 'Open position · trailing SL active. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
+  const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${reference}`).join(' · ');
+  text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : state.position.slTrailing ? 'Open position · trailing SL active. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -138,12 +155,12 @@ function drawChart(samples) {
   ctx.strokeStyle = '#25302f'; ctx.lineWidth = .6; ctx.setLineDash([3, 5]);
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
   ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
-  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', `Observed ${state?.base || 'asset'} price in SOL. Waiting for price samples; no open position.`); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
+  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. Waiting for price samples; no open position.`); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
   const values = samples.length > 1 ? samples.map(s => s.price) : [...samples.map(s => s.price), ...levels.map(level => level.price)];
   const low = Math.min(...values), high = Math.max(...values);
   const padding = Math.max((high - low) * .15, Math.abs(high) * .000001, Number.EPSILON);
   const min = low - padding, max = high + padding, range = max - min;
-  text('chart-levels', `${$('chart-levels').textContent} · Auto scale ${Number(min.toPrecision(8))}–${Number(max.toPrecision(8))} ${state?.quote || 'SOL'}`);
+  text('chart-levels', `${$('chart-levels').textContent} · Auto scale ${Number(min.toPrecision(8))}–${Number(max.toPrecision(8))} ${reference}`);
   const firstTime = samples[0]?.time ?? 0, lastTime = samples.at(-1)?.time ?? firstTime;
   const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
   const points = samples.map(s => [xAt(s.time), h - 28 - (s.price - min) / range * (h - 56)]);
@@ -171,31 +188,31 @@ function drawChart(samples) {
     const y = Math.max(28, Math.min(h - 28, h - 28 - (level.price - min) / range * (h - 56)));
     ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(outside ? w - 80 : 12, y); ctx.lineTo(w - 12, y);
     ctx.strokeStyle = level.color; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
-    const label = `${level.name}${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}${outside}`;
+    const label = `${level.name}${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${reference}${outside}`;
     ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     const labelWidth = ctx.measureText(label).width;
     ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
     ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
   }
-  canvas.setAttribute('aria-label', `Observed ${state?.base || 'asset'} price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? "Preview levels, no open position: " : "Position levels: ") + levelText + ". " : ""}Details in Transactions.`);
+  canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. ${tracking ? 'Tracking only; no trades are submitted.' : `${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? "Preview levels, no open position: " : "Position levels: ") + levelText + ". " : ""}Details in Transactions.`}`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 function renderPrice() {
   const price = livePrice?.price ?? state?.price ?? null;
-  $('price').replaceChildren(document.createTextNode(price === null ? '— ' : number(price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: state?.quote || 'SOL' }));
+  $('price').replaceChildren(document.createTextNode(price === null ? '— ' : number(price, 9) + ' '), Object.assign(document.createElement('small'), { textContent: state?.market?.reference || state?.quote || 'SOL' }));
   text('sample-label', priceFailed ? 'Price refresh failed · retrying' : livePrice ? 'Live price · 5s refresh' : 'Fetching live price');
 }
 async function refreshPrice() {
   if (priceBusy) return;
   priceBusy = true;
-  try { const quote = await api('price'); if (!savingAsset && (!state?.pair || quote.pair === state.pair)) livePrice = quote; priceFailed = false; }
+  try { const quote = await api('price'); if (!savingAsset && (!state?.marketKey || quote.marketKey === state.marketKey)) livePrice = quote; priceFailed = false; }
   catch { priceFailed = true; }
   finally { priceBusy = false; renderPrice(); }
 }
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
 }
-async function balances() { try { const b = await api('balance'); text('available', number(Number(b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
+async function balances() { if (state?.market && !state.market.executable) return; try { const b = await api('balance'); text('available', number(Number(b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
 async function wallet() {
   try {
     const w = await api('wallet');

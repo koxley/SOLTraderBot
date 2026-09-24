@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac, randomBytes } from 'node:crypto';
-import { config as makeConfig, units, format } from '../src/config.js';
+import { config as makeConfig, units, format, TRACKED_ASSETS } from '../src/config.js';
 import { Store } from '../src/store.js';
 import { Engine, signal, validateQuote } from '../src/engine.js';
 import { authenticate, appServer, snapshot } from '../src/server.js';
@@ -210,6 +210,25 @@ test('automatic crossover buys DOGE using SOL and stop loss sells it back', asyn
   f.price(900000); await f.engine.tick();
   assert.equal(f.store.orders().length, 2); assert.equal(f.engine.position(), null);
   assert.equal(f.store.orders()[0].side, 'sell'); assert.equal(f.store.orders()[0].reason, 'stop loss');
+});
+test('single-coin mode tracks every supported asset without creating trades', async t => {
+  const f = fixture(t), settings = strategySettings(f.cfg);
+  assert.deepEqual(TRACKED_ASSETS, ['SOL', 'ETH', 'DOGE', 'XRP', 'USDC', 'USDT']);
+  for (const asset of TRACKED_ASSETS) {
+    f.engine.configure({ ...settings, marketType: 'track', asset });
+    const market = f.engine.market();
+    assert.equal(market.asset, asset);
+    assert.equal(market.reference, asset === 'USDC' ? 'USDT' : 'USDC');
+    assert.equal(market.executable, false);
+  }
+  f.engine.configure({ ...settings, marketType: 'track', asset: 'ETH' });
+  f.engine.start();
+  for (const price of [1000000, 1000000, 1000000, 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
+  assert.equal(f.engine.orders().length, 0);
+  assert.equal(f.engine.position(), null);
+  assert.equal(f.store.get(f.engine.key('tracker')).state, 'entry');
+  assert.match(f.engine.status(), /ETH single-coin tracking/);
+  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'must not execute' }), /never submits trades/);
 });
 test('stopped bot makes no price requests or trades', async t => {
   const f = fixture(t); f.provider.quote = () => assert.fail('provider should not be called');
