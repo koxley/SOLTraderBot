@@ -133,7 +133,5 @@ export function config(env = process.env, requireTelegram = true) {
     tradeSize: amount(inverse ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL', inverse ? '0.25' : '0.025', quoteDecimals),
     sampleMs: integer('SAMPLE_SECONDS', 15, 15, 3600) * 1000,
     fast, slow,
-    stopLoss: integer('STOP_LOSS_BPS', 200, 1, 9000),
-    takeProfit: integer('TAKE_PROFIT_BPS', 300, 1, 50000),
   };
 }

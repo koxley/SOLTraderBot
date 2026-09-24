@@ -9,7 +9,6 @@ import { UserError, format } from './config.js';
 import { strategySettings } from './strategy.js';
 import { validateQuote } from './engine.js';
 import { ASSETS, resolveAsset } from './assets.js';
-import { stopLevel } from './risk.js';
 
 async function readSettings(req) {
   let size = 0; const parts = [];
@@ -43,7 +42,6 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
   const market = engine.market(), referenceDecimals = cfg.tokens[market.reference].decimals;
-  const stop = p ? stopLevel(p, cfg) : null;
   const samples = engine.store.get(engine.key('samples')) || [];
   const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
@@ -58,15 +56,9 @@ export function snapshot(engine) {
     samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** referenceDecimals })),
     warmup: Math.min(samples.length, warmup(cfg)), warmupRequired: warmup(cfg),
     position: market.executable && p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
-      stopPrice: Number(stop.numerator) / Number(stop.denominator) / 10 ** cfg.quoteDecimals,
-      slTrailing: Boolean(p.slHigh),
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
-    positions: lotsOf(p).map((lot, index) => {
-      const level = stopLevel(lot, cfg);
-      return { id: lot.id, label: `Buy ${index + 1}`, opened: lot.opened, amount: format(lot.amount, cfg.tokens[cfg.base].decimals), cost: format(lot.cost, cfg.quoteDecimals),
-        takeProfitPrice: Number(lot.cost) / Number(lot.amount) * 10 ** (cfg.tokens[cfg.base].decimals - cfg.quoteDecimals) * (1 + cfg.takeProfit / 10000),
-        stopPrice: Number(level.numerator) / Number(level.denominator) / 10 ** cfg.quoteDecimals, slTrailing: Boolean(lot.slHigh) };
-    }),
+    positions: lotsOf(p).map((lot, index) => ({ id: lot.id, label: `Buy ${index + 1}`, opened: lot.opened,
+      amount: format(lot.amount, cfg.tokens[cfg.base].decimals), cost: format(lot.cost, cfg.quoteDecimals) })),
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),
     chartTrades: orders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)

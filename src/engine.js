@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
 import { assetConfig, resolveAsset, selectedPreset } from './assets.js';
-import { stopLevel, advanceStop } from './risk.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
 const positiveInteger = n => typeof n === 'string' && /^\d+$/.test(n) && BigInt(n) > 0n;
@@ -31,12 +30,6 @@ export function ema(values, period) {
 
 export function signal(samples, position, cfg) {
   if (!samples.length) return null;
-  const last = BigInt(samples.at(-1).price);
-  for (const lot of lotsOf(position)) {
-    const stop = stopLevel(lot, cfg);
-    if (last * stop.denominator <= stop.numerator) return { side: 'sell', reason: 'stop loss', lotId: lot.id };
-    if (last * BigInt(lot.amount) * 10000n >= BigInt(lot.cost) * (10n ** BigInt(cfg.tokens[cfg.base].decimals)) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit', lotId: lot.id };
-  }
   if (samples.length < warmup(cfg)) return null;
   const prices = samples.map(s => Number(s.price));
   if (cfg.strategyType && cfg.strategyType !== 'ema') return alternativeSignal(prices, position, cfg);
@@ -253,24 +246,9 @@ export class Engine {
         this.store.set('errors', 0);
         return tracked.state === 'entry' ? `${market.asset} tracking signal: ${tracked.reason}. No trade was submitted.` : null;
       }
-      const position = this.position();
-      if (position && this.active()) {
-        const updated = aggregate(lotsOf(position).map(lot => advanceStop(lot, q.outAmount, this.cfg)));
-        this.store.set(this.key('position'), updated);
-      }
       const decision = signal(samples, this.position(), this.cfg);
       if (!decision || !this.active()) { this.store.set('errors', 0); return null; }
-      const results = [await this.trade(decision)];
-      // Every lot triggered by this sample receives its own exit, before any new entry.
-      if (decision.lotId) {
-        let next = signal(samples, this.position(), this.cfg);
-        while (this.active() && next?.lotId && next.lotId !== decision.lotId) {
-          results.push(await this.trade(next));
-          if (lotsOf(this.position()).some(lot => lot.id === next.lotId)) break;
-          next = signal(samples, this.position(), this.cfg);
-        }
-      }
-      const result = results.filter(Boolean).join('\n\n');
+      const result = await this.trade(decision);
       this.store.set('errors', 0);
       return result;
     } catch (error) {
@@ -395,6 +373,6 @@ export class Engine {
     const p = this.position();
     const market = this.market();
     const heading = market.executable ? `${market.asset}/${market.reference} trading` : `${market.asset} single-coin tracking (${market.reference} reference; no trades)`;
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
   }
 }
