@@ -1,3 +1,4 @@
+import { warmup, alternativeSignal } from './indicators.js';
 import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
@@ -35,8 +36,9 @@ export function signal(samples, position, cfg) {
     if (last * stop.denominator <= stop.numerator) return { side: 'sell', reason: 'stop loss' };
     if (last * BigInt(position.amount) * 10000n >= BigInt(position.cost) * (10n ** BigInt(cfg.tokens[cfg.base].decimals)) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit' };
   }
-  if (samples.length < cfg.slow + 1) return null;
+  if (samples.length < warmup(cfg)) return null;
   const prices = samples.map(s => Number(s.price));
+  if (cfg.strategyType && cfg.strategyType !== 'ema') return alternativeSignal(prices, position, cfg);
   const fast = ema(prices, cfg.fast), slow = ema(prices, cfg.slow);
   const previous = prices.slice(0, -1);
   if (!position && ema(previous, cfg.fast) <= ema(previous, cfg.slow) && fast > slow)
@@ -82,15 +84,22 @@ export class Engine {
     if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair));
   }
   configure(settings) {
-    if (this.active() || this.busy || this.closing || this.pending().length)
-      throw new UserError('Stop the bot and wait for any unsettled trade before changing the strategy.');
+    if (this.busy || this.closing || this.pending().length)
+      throw new UserError('Wait for the current trade to settle before changing the strategy.');
     const next = validateStrategy(settings, this.cfg.pair);
-    const reset = next.fast !== this.cfg.fast || next.slow !== this.cfg.slow || next.sampleMs !== this.cfg.sampleMs;
+    const reset = ['type', 'fast', 'slow', 'interval', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].some(k => strategySettings(next)[k] !== strategySettings(this.cfg)[k]);
     this.store.atomic(() => {
       this.store.set(this.key('strategy'), strategySettings(next));
       if (reset) this.store.set(this.key('samples'), []);
     });
     Object.assign(this.cfg, next);
+  }
+  async configureWhenReady(settings) {
+    validateStrategy(settings, this.cfg.pair);
+    const key = this.key('strategy'), deadline = Date.now() + 15000;
+    while (this.busy && !this.closing && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (key !== this.key('strategy')) throw new UserError('Market or mode changed. Reload settings and try again.');
+    this.configure(settings);
   }
   async changeAsset(input, resolve = resolveAsset) {
     if (this.cfg.quote !== 'SOL') throw new UserError('Asset selection requires SOL-funded trading.');
@@ -199,7 +208,7 @@ export class Engine {
       if (samples.length && now - samples.at(-1).time > this.cfg.sampleMs * 3) samples = [];
       const q = validateQuote(await this.jupiter.quote(this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString()), this.cfg.base, this.cfg.quote, (10n ** BigInt(this.cfg.tokens[this.cfg.base].decimals)).toString(), this.cfg);
       samples.push({ time: this.now(), price: q.outAmount });
-      samples = samples.slice(-this.cfg.slow * 10);
+      samples = samples.slice(-warmup(this.cfg) * 10);
       this.store.set(this.key('samples'), samples);
       this.store.set('lastTick', this.now());
       const position = this.position();
@@ -321,6 +330,6 @@ export class Engine {
   status() {
     const samples = this.store.get(this.key('samples')) || [];
     const p = this.position();
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${this.cfg.base}/${this.cfg.quote} · EMA ${this.cfg.fast}/${this.cfg.slow} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, this.cfg.slow + 1)}/${this.cfg.slow + 1}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${this.cfg.base}/${this.cfg.quote} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}\nTrade size: ${format(this.cfg.tradeSize, this.cfg.quoteDecimals)} ${this.cfg.quote}\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}`;
   }
 }

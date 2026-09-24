@@ -1,3 +1,4 @@
+import { warmup } from './indicators.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -51,7 +52,7 @@ export function snapshot(engine) {
     price: last ? Number(last.price) / 10 ** cfg.quoteDecimals : null,
     chartInterval: 15,
     samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
-    warmup: Math.min(samples.length, cfg.slow + 1), warmupRequired: cfg.slow + 1,
+    warmup: Math.min(samples.length, warmup(cfg)), warmupRequired: warmup(cfg),
     position: p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
       stopPrice: Number(stop.numerator) / Number(stop.denominator) / 10 ** cfg.quoteDecimals,
       slTrailing: Boolean(p.slHigh),
@@ -148,7 +149,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
             engine.switchMode(input.mode, input.acknowledged === true);
             break;
           }
-          case '/api/strategy': engine.configure(await readSettings(req)); break;
+          case '/api/strategy': await engine.configureWhenReady(await readSettings(req)); break;
           case '/api/wallet/unlock':
           case '/api/wallet/create': {
             if (demo) {
