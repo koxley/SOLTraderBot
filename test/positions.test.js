@@ -80,3 +80,24 @@ test('snapshot retains per-buy cost and amounts but omits exit levels', async t=
     for (const key of ['takeProfitPrice','stopPrice','slTrailing']) assert.equal(Object.hasOwn(lot,key),false);
   }
 });
+
+test('sell allocations retain exact buy identity, cost and proceeds through partial sells and restart', async t => {
+  const {engine,store,price}=fixture(t); engine.start();
+  await engine.trade({side:'buy',reason:'first'}); const first=engine.orders()[0].id;
+  price(2000000000); await engine.trade({side:'buy',reason:'second'}); const second=engine.orders()[0].id;
+  await engine.trade({side:'sell',reason:'partial'});
+  const partial=engine.orders()[0]; assert.equal(partial.buyAllocations[0].buyId,first);
+  engine.requestClose(); await engine.tick(); const close=engine.orders()[0];
+  assert.deepEqual(close.buyAllocations.map(a=>a.buyId),[first,second]);
+  for (const sell of [partial,close]) {
+    const sum=key=>sell.buyAllocations.reduce((n,a)=>n+BigInt(a[key]),0n);
+    assert.equal(sum('amount'),BigInt(sell.actualInput)); assert.equal(sum('proceeds'),BigInt(sell.actualOutput));
+    assert.equal(sum('realizedQuote'),BigInt(sell.realizedQuote));
+  }
+  engine.fill(close,close.actualInput,close.actualOutput);
+  assert.deepEqual(store.order(close.id).buyAllocations,close.buyAllocations);
+  const reopened=new Engine(config({},false),store,{}), view=snapshot(reopened);
+  assert.equal(view.trades.find(o=>o.id===first).sellAllocations.length,2);
+  assert.equal(view.trades.find(o=>o.id===second).sellAllocations[0].sellId,close.id);
+  assert.equal(view.trades.find(o=>o.id===close.id).buyAllocations[0].buyId,first);
+});
