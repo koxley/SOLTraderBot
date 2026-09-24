@@ -11,3 +11,11 @@ Stop trading, close positions in both paper and live modes, and reconcile unsett
 The selected asset is persisted in SQLite and restored on restart before mint verification. Custom markets are identified by mint, not symbol. Each market keeps its own chart, position, transaction history, paper balance and strategy settings. New markets inherit the current SOL strategy and paper starting balance; returning to a market restores its saved settings. Daily limits apply to the selected market. Existing cbBTC and SOL-funded USDC records retain their original market keys.
 
 Prices continue to refresh every 5 seconds and chart samples every 15 seconds. All asset labels, wallet token balances, receipts and TP/SL chart labels follow the selected market. The simulated preview supports presets only; custom mint verification runs in the deployed app.
+
+## Exit defaults and trailing stop
+
+New defaults are TP 3%, SL 2%, with a 15-second strategy sample interval. Explicit environment overrides and existing saved strategy settings keep their values.
+
+TP remains fixed at the configured percentage above the actual fill entry price (position cost divided by amount). SL starts at the configured percentage below entry. Once an observed strategy sample reaches SL% above entry, SL moves to SL% below that price and follows subsequent higher sampled prices. It never follows falling prices downward. Example: entry 100, SL 2% starts at 98; at price 102 it rises to 99.96, and at 102.5 it rises to 100.45. TP stays at 103 for a 3% target and still sells when reached. EMA downward exits remain enabled.
+
+The trailing high is stored with each position and survives restarts. It resets with a new buy. The chart displays the server's actual stop level; the separate 5-second price display does not change the strategy's stop between samples. Trailing updates and exits run only while the bot is running, at its configured strategy interval. Existing positions without trailing state initialize it on their next sample after starting. Editing the configured SL percentage explicitly recalculates its distance from the saved trailing high.
