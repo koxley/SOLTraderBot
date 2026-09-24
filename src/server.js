@@ -7,6 +7,7 @@ import { UserError, format } from './config.js';
 import { strategySettings } from './strategy.js';
 import { validateQuote } from './engine.js';
 import { ASSETS, resolveAsset } from './assets.js';
+import { stopLevel } from './risk.js';
 
 async function readSettings(req) {
   let size = 0; const parts = [];
@@ -37,6 +38,7 @@ export function authenticate(initData, token, owner, now = Date.now()) {
 
 export function snapshot(engine) {
   const cfg = engine.cfg, p = engine.position();
+  const stop = p ? stopLevel(p, cfg) : null;
   const samples = engine.store.get(engine.key('samples')) || [];
   const chartSamples = engine.store.get(engine.key('chartSamples')) || samples;
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
@@ -49,6 +51,8 @@ export function snapshot(engine) {
     samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** cfg.quoteDecimals })),
     warmup: Math.min(samples.length, cfg.slow + 1), warmupRequired: cfg.slow + 1,
     position: p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
+      stopPrice: Number(stop.numerator) / Number(stop.denominator) / 10 ** cfg.quoteDecimals,
+      slTrailing: Boolean(p.slHigh),
       value: last ? Number(BigInt(p.amount) * BigInt(last.price) / (10n ** BigInt(cfg.tokens[cfg.base].decimals))) / 10 ** cfg.quoteDecimals : null } : null,
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
     strategy: strategySettings(cfg),

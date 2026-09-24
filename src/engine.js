@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
 import { assetConfig, resolveAsset } from './assets.js';
+import { stopLevel, advanceStop } from './risk.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
 const positiveInteger = n => typeof n === 'string' && /^\d+$/.test(n) && BigInt(n) > 0n;
@@ -30,9 +31,9 @@ export function signal(samples, position, cfg) {
   if (!samples.length) return null;
   const last = BigInt(samples.at(-1).price);
   if (position) {
-    const value = BigInt(position.amount) * last / (10n ** BigInt(cfg.tokens[cfg.base].decimals));
-    if (value * 10000n <= BigInt(position.cost) * BigInt(10000 - cfg.stopLoss)) return { side: 'sell', reason: 'stop loss' };
-    if (value * 10000n >= BigInt(position.cost) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit' };
+    const stop = stopLevel(position, cfg);
+    if (last * stop.denominator <= stop.numerator) return { side: 'sell', reason: 'stop loss' };
+    if (last * BigInt(position.amount) * 10000n >= BigInt(position.cost) * (10n ** BigInt(cfg.tokens[cfg.base].decimals)) * BigInt(10000 + cfg.takeProfit)) return { side: 'sell', reason: 'take profit' };
   }
   if (samples.length < cfg.slow + 1) return null;
   const prices = samples.map(s => Number(s.price));
@@ -201,6 +202,11 @@ export class Engine {
       samples = samples.slice(-this.cfg.slow * 10);
       this.store.set(this.key('samples'), samples);
       this.store.set('lastTick', this.now());
+      const position = this.position();
+      if (position && this.active()) {
+        const updated = advanceStop(position, q.outAmount, this.cfg);
+        if (updated !== position) this.store.set(this.key('position'), updated);
+      }
       const decision = signal(samples, this.position(), this.cfg);
       if (!decision || !this.active()) { this.store.set('errors', 0); return null; }
       const result = await this.trade(decision);
