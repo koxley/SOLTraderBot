@@ -299,12 +299,16 @@ function signedAuth(token, owner, date = Math.floor(Date.now() / 1000)) {
   const body = [...p].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('\n');
   p.set('hash', createHmac('sha256', secret).update(body).digest('hex')); return p.toString();
 }
-test('Telegram initData accepts only the owner with a fresh authentic signature', () => {
+test('Telegram owner sessions do not expire but require a valid signature and authentication date', () => {
   const token = '123:secret', owner = '456', valid = signedAuth(token, owner);
   assert.equal(authenticate(valid, token, owner), true);
   assert.equal(authenticate(valid, token, '999'), false);
   assert.equal(authenticate(valid.replace('456', '457'), token, owner), false);
-  assert.equal(authenticate(signedAuth(token, owner, 1), token, owner), false);
+  assert.equal(authenticate(signedAuth(token, owner, 1), token, owner), true);
+  assert.equal(authenticate(valid, token, owner, Date.now() + 365 * 86400000), true);
+  for (const date of [0, -1, '', 'invalid', '1.5', Math.floor(Date.now() / 1000) + 120])
+    assert.equal(authenticate(signedAuth(token, owner, date), token, owner), false);
+  assert.equal(authenticate(valid, '123:rotated-secret', owner), false);
   assert.equal(authenticate(valid + '&user={}', token, owner), false);
   assert.equal(authenticate('', token, owner), false);
 });
@@ -326,6 +330,8 @@ test('HTTP app blocks unauthenticated trading and accepts owner-signed controls'
   const state = await (await fetch(base + '/api/state', { headers })).json();
   assert.equal(state.running, true); assert.equal(state.dogeMint, mint);
   assert.equal(JSON.stringify(state).includes('secret'), false);
+  const oldSession = await fetch(base + '/api/state', { headers: { Authorization: 'tma ' + signedAuth(token, owner, 1) } });
+  assert.equal(oldSession.status, 200);
 });
 test('Telegram commands reject other users and groups', async t => {
   const f = fixture(t), telegram = new Telegram({ ...f.cfg, owner: '456' }, f.engine);
