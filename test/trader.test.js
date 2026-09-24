@@ -51,7 +51,7 @@ test('strategy API requires owner authentication and validates request payload',
   assert.equal(f.engine.active(), false);
 });
 
-test('editable paper balance persists as the reset amount and preserves positions', t => {
+test('editable paper balance preserves positions but start resets cash to one SOL', t => {
   const f = fixture(t, { TRADING_PAIR: 'USDC_SOL' });
   f.store.set(f.engine.paperKey(), { SOL: '1000000000', USDC: '2000000' });
   f.store.set(f.engine.key('position'), { amount: '2000000', cost: '10000000' });
@@ -66,8 +66,8 @@ test('editable paper balance persists as the reset amount and preserves position
   f.engine.stop(); f.engine.busy = true; assert.throws(() => f.engine.setPaperBalance('3'), /Stop the bot/);
   f.engine.busy = false;
   const restarted = new Engine(makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), f.store, f.provider);
-  restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '2123456789');
-  restarted.setPaperBalance('0'); restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '0');
+  restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '1000000000');
+  restarted.setPaperBalance('0'); restarted.resetPaperSOL(); assert.equal(f.store.get(restarted.paperKey()).SOL, '1000000000');
   restarted.cfg.mode = 'live'; assert.throws(() => restarted.setPaperBalance('4'), /Live balances/);
 });
 
@@ -113,7 +113,7 @@ test('cbBTC migration carries SOL settings but isolates previous holdings and bl
   store.set('USDC_SOL:paper:strategy',{...strategySettings(cfg),sizePercent:'3'});
   store.set('USDC_SOL:paper:position',{amount:'20',cost:'10'});
   const engine = new Engine(cfg,store,{}); engine.resetPaperSOL();
-  assert.equal((store.get(engine.paperKey())).SOL,'2500000000'); assert.equal(cfg.tradePercentBps,300);
+  assert.equal((store.get(engine.paperKey())).SOL,'1000000000'); assert.equal(cfg.tradePercentBps,300);
   assert.equal(engine.position(),null); assert.equal(store.get('USDC_SOL:paper:position').amount,'20');
   store.set('USDC_SOL:live:position',{amount:'20',cost:'10'});
   assert.throws(()=>new Engine(makeConfig({},false),store,{}),/changing trading direction/);
