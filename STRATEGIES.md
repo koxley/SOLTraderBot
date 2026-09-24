@@ -32,3 +32,8 @@ Each buy retains its own entry cost. Close Open Positions sells all bot-held tok
 The app lists each open buy with its amount and cost. The chart shows prices and buy/sell markers, without exit levels. Legacy exit settings and trailing-high data are ignored. Existing fixed-size settings are converted to a percentage of the former 1 SOL reference balance (for example 0.025 SOL becomes 2.5%), rounded to two percentage decimals and bounded to 0.01%-100%; review the new percentage in Strategy. The inverse legacy USDC-funded market uses a 1 USDC reference instead.
 
 Signals retain their existing timing: crossover/recovery entries require a fresh crossing, while sell conditions are checked at each strategy sample. Multiple buys do not mean buying on every price refresh.
+
+## Buy/sell relationships
+
+Completed sells persist allocations to their original buy IDs, including sold quantity, cost basis, proceeds, and realized return. Partial sells consume the oldest buys first. One sell may link to several buys; each buy may link to several sells. Links survive restarts and reconciliation. Transactions show both directions, even when a linked order is outside the latest 30 rows. Earlier sells without stored allocations are explicitly marked as historical; links are not guessed. Legacy aggregate holdings retain their legacy lot identifier.
+
