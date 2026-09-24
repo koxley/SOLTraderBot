@@ -39,7 +39,7 @@ function render(s) {
   $('connection-error').hidden = true;
   $('demo-banner').hidden = !s.demo;
   $('setup-notice').hidden = s.pairReady;
-  $('trade-error').hidden = !s.error; text('trade-error', s.error || '');
+  $('trade-error').hidden = !s.error; text('trade-error', s.error ? `Last trading error: ${s.error}` : '');
   text('mode', s.mode.toUpperCase() + ' MODE');
   $('trading-mode').value = s.mode;
   $('trading-mode').disabled = actionBusy || s.running || s.busy || s.closing || !!s.pending;

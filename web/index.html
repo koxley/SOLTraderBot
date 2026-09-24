@@ -12,9 +12,9 @@
     <header class="topbar"><a class="brand" href="/" aria-label="SOL TRADER home"><span class="brand-mark">↗</span><span>SOL <span class="light">TRADER</span><small>AUTOMATIC. ON YOUR TERMS.</small></span></a><span class="network"><i></i> Solana</span></header>
     <div id="demo-banner" class="demo-banner" hidden>INTERACTIVE PREVIEW · Simulated prices and trades. No real funds.</div>
     <div id="connection-error" class="notice error" hidden></div>
-    <div id="trade-error" class="notice error" hidden></div>
     <main>
       <section id="dashboard" class="view">
+        <div id="trade-error" class="notice error" role="status" hidden></div>
         <div class="section-heading"><div><p class="eyebrow">YOUR TRADING DESK</p><h1>Let your strategy fly.</h1></div><span class="mode-tag" id="mode">PAPER MODE</span></div>
         <div id="setup-notice" class="notice" hidden>Choose a trading asset in Strategy. You can create and fund your Solana wallet now.</div>
         <section class="card mode-controls"><label for="trading-mode">Trading mode</label><select id="trading-mode" aria-label="Trading mode"><option value="paper">Paper — simulated funds</option><option value="live">Live — real funds</option></select><p id="mode-help" class="footnote">Stop the bot before changing mode. Live requires an unlocked wallet.</p></section><section class="market card">
