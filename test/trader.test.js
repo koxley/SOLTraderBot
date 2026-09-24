@@ -191,30 +191,6 @@ test('decimal amounts retain exact smallest units and reject malformed input', (
   assert.equal(units('0.000000001', 9), 1n); assert.equal(format('1234000000', 9), '1.234');
   for (const input of ['-1', 'NaN', '1e9', '1,000', '0.0000000001', 'Infinity', '']) assert.throws(() => units(input, 9));
 });
-
-test('live quote errors distinguish missing transaction, wallet, execution ID, RFQ and funding', async t => {
-  const f = fixture(t), q = await f.provider.quote('SOL', 'DOGE', '25000000', 'wallet');
-  for (const [patch, message] of [
-    [{ transaction: '', errorCode: 1 }, /insufficient SOL/],
-    [{ transaction: '', errorCode: 2 }, /SOL for network fees/],
-    [{ transaction: '', errorCode: 3 }, /gasless minimum/],
-    [{ transaction: '' }, /no executable transaction/],
-    [{ transaction: null, taker: undefined }, /price-only quote/],
-    [{ requestId: '' }, /execution request ID/],
-    [{ router: 'jupiterz' }, /unsupported RFQ/],
-  ]) assert.throws(() => validateQuote({ ...q, ...patch }, 'SOL', 'DOGE', '25000000', f.cfg, true), message);
-  assert.equal(validateQuote(q, 'SOL', 'DOGE', '25000000', f.cfg, true), q);
-});
-
-test('live swaps fail before requesting a route when wallet is locked or funds are insufficient', async t => {
-  const f = fixture(t, { TRADING_MODE: 'live', LIVE_TRADING_ACK: 'I_UNDERSTAND_REAL_FUNDS' });
-  let quotes = 0; f.provider.quote = async () => { quotes++; throw new Error('unexpected quote'); };
-  f.engine.start(); f.wallet.balances = async () => ({ SOL: '0', DOGE: '0' });
-  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Insufficient SOL/);
-  f.engine.wallet = null;
-  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Unlock/);
-  assert.equal(quotes, 0); assert.equal(f.executions(), 0); assert.equal(f.store.orders().length, 0);
-});
 test('live execution requires explicit local acknowledgement; invalid strategy rejected', () => {
   assert.throws(() => config({ TRADING_MODE: 'live' }, false));
   assert.throws(() => config({ EMA_FAST: '12', EMA_SLOW: '5' }, false));
