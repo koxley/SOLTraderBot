@@ -88,6 +88,8 @@ function renderTrades(trades, target) {
   }
 }
 function drawChart(samples) {
+  const latestTime = samples.at(-1)?.time;
+  samples = samples.filter(sample => sample.time >= latestTime - 15 * 60 * 1000).slice(-60);
   const trades = state?.chartTrades || state?.trades || [];
   const previewLevels = !state?.position;
   const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
@@ -106,7 +108,11 @@ function drawChart(samples) {
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
   ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
   if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', 'Observed cbBTC price in SOL. Waiting for price samples; no open position.'); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
-  const values = [...samples.map(s => s.price), ...levels.map(level => level.price)], min = Math.min(...values), max = Math.max(...values), range = max - min || max * .02 || 1;
+  const values = samples.length > 1 ? samples.map(s => s.price) : [...samples.map(s => s.price), ...levels.map(level => level.price)];
+  const low = Math.min(...values), high = Math.max(...values);
+  const padding = Math.max((high - low) * .15, Math.abs(high) * .000001, Number.EPSILON);
+  const min = low - padding, max = high + padding, range = max - min;
+  text('chart-levels', `${$('chart-levels').textContent} · Auto scale ${Number(min.toPrecision(8))}–${Number(max.toPrecision(8))} ${state?.quote || 'SOL'}`);
   const firstTime = samples[0]?.time ?? 0, lastTime = samples.at(-1)?.time ?? firstTime;
   const xAt = time => 12 + Math.min(1, Math.max(0, (time - firstTime) / (lastTime - firstTime || 1))) * (w - 24);
   const points = samples.map(s => [xAt(s.time), h - 28 - (s.price - min) / range * (h - 56)]);
@@ -130,10 +136,11 @@ function drawChart(samples) {
     ctx.strokeStyle = '#0b0e14'; ctx.lineWidth = 1.5; ctx.stroke();
   }
   for (const level of levels) {
-    const y = h - 28 - (level.price - min) / range * (h - 56);
-    ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(12, y); ctx.lineTo(w - 12, y);
+    const outside = level.price > max ? ' ↑ above range' : level.price < min ? ' ↓ below range' : '';
+    const y = Math.max(28, Math.min(h - 28, h - 28 - (level.price - min) / range * (h - 56)));
+    ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(outside ? w - 80 : 12, y); ctx.lineTo(w - 12, y);
     ctx.strokeStyle = level.color; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
-    const label = `${level.name}${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`;
+    const label = `${level.name}${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}${outside}`;
     ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     const labelWidth = ctx.measureText(label).width;
     ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
