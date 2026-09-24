@@ -128,7 +128,7 @@ function renderLots(lots) {
   const list = $('position-lots'); list.replaceChildren();
   for (const lot of lots) {
     const row = document.createElement('p'); row.className = 'footnote';
-    row.textContent = `${lot.label} · ${number(lot.amount, 8)} ${state.base} · cost ${number(lot.cost, 8)} SOL`;
+    row.textContent = `${lot.label} [${lot.id}] · ${number(lot.amount, 8)} ${state.base} · cost ${number(lot.cost, 8)} SOL`;
     list.append(row);
   }
   if (!lots.length) list.textContent = 'No open buys.';
@@ -150,6 +150,16 @@ function renderTrades(trades, target) {
     status.textContent = `${(trade.mode || state.mode).toUpperCase()} · ${labels[trade.status] || trade.status}`;
     const reason = document.createElement('small'); reason.textContent = trade.reason;
     const date = document.createElement('small'); date.textContent = new Date(trade.time).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }); info.append(title, status, reason, date);
+    const reference = document.createElement('small'); reference.textContent = `${trade.side === 'buy' ? 'Buy' : 'Sell'} ID: ${trade.id}`; info.append(reference);
+    const links = trade.side === 'sell' ? trade.buyAllocations : trade.sellAllocations;
+    for (const link of links || []) {
+      const relation = document.createElement('small');
+      relation.textContent = `${trade.side === 'sell' ? 'From buy' : 'Sold by'} ${trade.side === 'sell' ? link.buyId : link.sellId} · ${link.amount} ${trade.side === 'sell' ? trade.input : trade.output} · cost ${link.cost} ${state.quote} · received ${link.proceeds} ${state.quote} · return ${number(link.realized, 9)} ${state.quote}`;
+      info.append(relation);
+    }
+    if (trade.side === 'sell' && trade.status === 'filled' && !trade.relationshipKnown) {
+      const legacy = document.createElement('small'); legacy.textContent = 'Historical sell: buy linkage was not recorded.'; info.append(legacy);
+    }
     const result = document.createElement('div'); result.className = 'trade-result'; result.textContent = (trade.status === 'filled' ? 'Sent ' : 'Requested ') + trade.amount + ' ' + trade.input;
     const out = document.createElement('small'); out.textContent = trade.received !== null ? 'Received ' + trade.received + ' ' + trade.output : ['failed', 'expired'].includes(trade.status) ? 'No completed swap' : 'Awaiting confirmation'; result.append(out);
     if (trade.signature) { const a = document.createElement('a'); a.href = 'https://solscan.io/tx/' + encodeURIComponent(trade.signature); a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'View transaction ↗'; const small = document.createElement('small'); small.append(a); result.append(small); }
