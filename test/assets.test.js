@@ -94,7 +94,8 @@ test('asset API clears old price cache and returns selected token precision', as
   assert.equal(snapshot(engine).position.amount, '0.995');
   assert.equal(engine.orders()[0].output, 'USDT');
   await engine.trade({ side: 'sell', reason: 'test' });
-  assert.equal(engine.position(), null);
+  assert.equal(engine.position().amount, '970125');
   assert.equal(engine.orders()[0].input, 'USDT');
-  assert.equal((await engine.balances()).USDT, '0');
+  assert.equal((await engine.balances()).USDT, '970125');
+  engine.requestClose(); await engine.tick(); assert.equal(engine.position(), null);
 });

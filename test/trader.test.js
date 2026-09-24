@@ -19,19 +19,19 @@ const config = (env = {}, required = true) => makeConfig({ TRADING_PAIR: 'DOGE_S
 test('strategy settings persist, update runtime and reset sampling only when needed', t => {
   const f = fixture(t); const original = strategySettings(f.cfg);
   f.store.set(f.engine.key('samples'), [{ price: '1000', time: 1 }]);
-  f.engine.configure({ ...original, size: '0.03', slippage: '0.25' });
-  assert.equal(f.cfg.tradeSize, '30000000'); assert.equal(f.cfg.slippage, 25);
+  f.engine.configure({ ...original, sizePercent: '3', slippage: '0.25' });
+  assert.equal(f.cfg.tradePercentBps, 300); assert.equal(f.cfg.slippage, 25);
   assert.equal(f.store.get(f.engine.key('samples')).length, 1);
   f.engine.configure({ ...strategySettings(f.cfg), fast: 4, slow: 9 });
   assert.deepEqual(f.store.get(f.engine.key('samples')), []);
   const fresh = config({ DOGE_MINT: mint }, false);
   new Engine(fresh, f.store, f.provider);
-  assert.equal(fresh.fast, 4); assert.equal(fresh.tradeSize, '30000000');
+  assert.equal(fresh.fast, 4); assert.equal(fresh.tradePercentBps, 300);
   assert.equal(f.store.get('live:strategy'), undefined);
 });
 test('strategy rejects invalid settings, allows running edits and blocks in-flight changes', t => {
   const f = fixture(t), settings = strategySettings(f.cfg);
-  for (const patch of [{ fast: 20, slow: 5 }, { size: '2' }, { slippage: '3.01' }, { interval: '1' }, { stopLoss: '0' }, { size: '1e-4' }, { takeProfit: '0.001' }, { maxDaily: '0.001' }, { token: 'secret' }])
+  for (const patch of [{ fast: 20, slow: 5 }, { sizePercent: '101' }, { slippage: '3.01' }, { interval: '1' }, { stopLoss: '0' }, { sizePercent: '1e-4' }, { takeProfit: '0.001' }, { maxDaily: '0.001' }, { token: 'secret' }])
     assert.throws(() => f.engine.configure({ ...settings, ...patch }));
   assert.deepEqual(strategySettings(f.cfg), settings);
   assert.equal(f.store.get(f.engine.key('strategy')), undefined);
@@ -44,10 +44,10 @@ test('strategy API requires owner authentication and validates request payload',
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/api/strategy`;
-  const body = JSON.stringify({ ...strategySettings(f.cfg), size: '0.04' });
+  const body = JSON.stringify({ ...strategySettings(f.cfg), sizePercent: '4' });
   assert.equal((await fetch(url, { method: 'POST', body })).status, 401);
   const response = await fetch(url, { method: 'POST', body, headers: { Authorization: 'tma ' + signedAuth(token, owner), 'Content-Type': 'application/json' } });
-  assert.equal(response.status, 200); assert.equal((await response.json()).strategy.size, '0.04');
+  assert.equal(response.status, 200); assert.equal((await response.json()).strategy.sizePercent, 4);
   assert.equal(f.engine.active(), false);
 });
 
@@ -110,10 +110,10 @@ test('default cbBTC market buys eight-decimal cbBTC with SOL and closes only its
 test('cbBTC migration carries SOL settings but isolates previous holdings and blocks live exposure', t => {
   const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   store.set('USDC_SOL:paper:startingBalance','2500000000');
-  store.set('USDC_SOL:paper:strategy',{...strategySettings(cfg),size:'0.03'});
+  store.set('USDC_SOL:paper:strategy',{...strategySettings(cfg),sizePercent:'3'});
   store.set('USDC_SOL:paper:position',{amount:'20',cost:'10'});
   const engine = new Engine(cfg,store,{}); engine.resetPaperSOL();
-  assert.equal((store.get(engine.paperKey())).SOL,'2500000000'); assert.equal(cfg.tradeSize,'30000000');
+  assert.equal((store.get(engine.paperKey())).SOL,'2500000000'); assert.equal(cfg.tradePercentBps,300);
   assert.equal(engine.position(),null); assert.equal(store.get('USDC_SOL:paper:position').amount,'20');
   store.set('USDC_SOL:live:position',{amount:'20',cost:'10'});
   assert.throws(()=>new Engine(makeConfig({},false),store,{}),/changing trading direction/);
@@ -256,7 +256,7 @@ test('entry budget and insufficient paper funds are enforced before debiting', a
   await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Daily/);
   assert.equal(f.store.orders().length, 0); assert.equal(f.store.get('paper').SOL, '1000000000');
   f.cfg.maxDaily = '1000000000'; f.store.set('paper', { SOL: '1', DOGE: '0' });
-  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Insufficient/);
+  assert.match(await f.engine.trade({ side: 'buy', reason: 'test' }), /too small/);
 });
 test('tampered mint, input and slippage are rejected', async t => {
   const f = fixture(t), q = await f.provider.quote('SOL', 'DOGE', '25000000');
@@ -421,14 +421,14 @@ test('HTTP wallet creation and deposit QR never expose private material', async 
 
 test('mode changes isolate strategies and balances and never start trading', t => {
   const f = fixture(t), paper = f.store.get('paper'); f.engine.wallet = f.wallet;
-  f.engine.configure({ ...strategySettings(f.cfg), size: '0.04' });
+  f.engine.configure({ ...strategySettings(f.cfg), sizePercent: '4' });
   assert.throws(() => f.engine.switchMode('live'), /acknowledge/);
   f.engine.start(); assert.throws(() => f.engine.switchMode('live', true), /Stop/); f.engine.stop();
   f.engine.switchMode('live', true);
-  assert.equal(f.cfg.mode, 'live'); assert.equal(f.cfg.tradeSize, '25000000'); assert.equal(f.engine.active(), false);
-  f.engine.configure({ ...strategySettings(f.cfg), size: '0.05' });
-  f.engine.switchMode('paper'); assert.equal(f.cfg.tradeSize, '40000000'); assert.deepEqual(f.store.get('paper'), paper);
-  f.engine.switchMode('live', true); assert.equal(f.cfg.tradeSize, '50000000');
+  assert.equal(f.cfg.mode, 'live'); assert.equal(f.cfg.tradePercentBps, 250); assert.equal(f.engine.active(), false);
+  f.engine.configure({ ...strategySettings(f.cfg), sizePercent: '5' });
+  f.engine.switchMode('paper'); assert.equal(f.cfg.tradePercentBps, 400); assert.deepEqual(f.store.get('paper'), paper);
+  f.engine.switchMode('live', true); assert.equal(f.cfg.tradePercentBps, 500);
   f.store.set('live:position', { amount: '1', cost: '1' });
   assert.throws(() => f.engine.switchMode('paper'), /Close your live/);
 });
@@ -610,7 +610,7 @@ test('default SOL-funded USDC strategy buys and closes using the original direct
   assert.deepEqual(calls[1], { input: 'USDC', output: 'SOL', amount: '5000000' });
   assert.equal(engine.position(), null); assert.equal((await engine.balances()).SOL, '1025000000');
   assert.equal((await engine.balances()).USDC, '0');
-  engine.stop(); engine.configure({ ...strategySettings(cfg), size: '0.012345678' }); assert.equal(cfg.tradeSize, '12345678');
+  engine.stop(); engine.configure({ ...strategySettings(cfg), sizePercent: '1.23' }); assert.equal(cfg.tradePercentBps, 123);
   store.set('SOL_USDC:live:position', { amount: '999', cost: '123' });
   assert.throws(() => new Engine(makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), store, provider), /changing trading direction/);
 });
@@ -630,8 +630,8 @@ test('SOL-funded USDC receipt reconciliation respects token direction', async ()
 test('SOL/USDC settings use USDC precision and paper reset leaves live and running balances alone', t => {
   const cfg=makeConfig({ TRADING_PAIR: 'SOL_USDC' },false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
   const engine=new Engine(cfg,store,{});
-  engine.configure({...strategySettings(cfg),size:'0.123456'}); assert.equal(cfg.tradeSize,'123456');
-  assert.throws(()=>engine.configure({...strategySettings(cfg),size:'0.1234567'}),/6 decimal/);
+  engine.configure({...strategySettings(cfg),sizePercent:'12.34'}); assert.equal(cfg.tradePercentBps,1234);
+  assert.throws(()=>engine.configure({...strategySettings(cfg),sizePercent:'12.345'}),/two decimal/);
   store.set(engine.paperKey(),{SOL:'12',USDC:'34'}); engine.resetPaperSOL();
   assert.deepEqual(store.get(engine.paperKey()),{SOL:'12',USDC:'1000000'});
   engine.start(); store.set(engine.paperKey(),{SOL:'12',USDC:'34'}); engine.resetPaperSOL();

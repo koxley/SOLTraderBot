@@ -64,3 +64,11 @@ test('chart uses the persisted trailing SL while TP remains anchored to the buy'
   assert.deepEqual(c.labels, ['TP 103 SOL', 'SL 99.96 SOL']);
   assert.match(c.text['chart-levels'], /trailing SL active/);
 });
+
+test('chart can display each buy lot independently', () => {
+  const c=chart({amount:'2',cost:'3'});
+  c.sandbox.state.positions=[{id:'a',label:'Buy 1',amount:'1',cost:'1',stopPrice:0.98},{id:'b',label:'Buy 2',amount:'1',cost:'2',stopPrice:1.96}];
+  c.sandbox.chartLotId='a'; c.render([]); assert.equal(c.labels[0],'TP 1.06 SOL');
+  c.sandbox.chartLotId='b'; c.render([]); assert.equal(c.labels[0],'TP 2.12 SOL');
+  assert.match(c.text['chart-levels'],/Buy 2/);
+});
