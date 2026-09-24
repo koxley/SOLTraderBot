@@ -31,8 +31,10 @@ export function authenticate(initData, token, owner, now = Date.now()) {
   const secret = createHmac('sha256', 'WebAppData').update(token).digest();
   const expected = createHmac('sha256', secret).update(text).digest();
   if (!timingSafeEqual(expected, Buffer.from(hash, 'hex'))) return false;
-  const time = Number(params.get('auth_date'));
-  if (!Number.isInteger(time) || time > now / 1000 + 30 || now / 1000 - time > 3600) return false;
+  const authDate = params.get('auth_date');
+  const time = Number(authDate);
+  // Owner-requested non-expiring sessions; signed identity is still checked on every request.
+  if (!/^\d+$/.test(authDate || '') || !Number.isSafeInteger(time) || time <= 0 || time > now / 1000 + 30) return false;
   try { return String(JSON.parse(params.get('user')).id) === owner; } catch { return false; }
 }
 
@@ -108,7 +110,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       }
       if (!path.startsWith('/api/')) return reply(404, { error: 'Not found' });
       if (!demo && !authenticate(req.headers.authorization?.replace(/^tma /, ''), token, owner))
-        return reply(401, { error: 'Open this app from your bot in Telegram. Session expires after one hour; reopen to refresh.' });
+        return reply(401, { error: 'Open this app from your bot in Telegram using the authorized owner account.' });
       if (req.method === 'GET' && path === '/api/price') return reply(200, await marketPrice());
       if (req.method === 'GET' && path === '/api/state') return reply(200, { ...snapshot(engine), demo });
       if (req.method === 'GET' && path === '/api/balance') return reply(200, await engine.balances());
