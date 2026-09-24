@@ -29,14 +29,14 @@ test('strategy settings persist, update runtime and reset sampling only when nee
   assert.equal(fresh.fast, 4); assert.equal(fresh.tradeSize, '30000000');
   assert.equal(f.store.get('live:strategy'), undefined);
 });
-test('strategy rejects invalid settings and changes during trading without partial writes', t => {
+test('strategy rejects invalid settings, allows running edits and blocks in-flight changes', t => {
   const f = fixture(t), settings = strategySettings(f.cfg);
   for (const patch of [{ fast: 20, slow: 5 }, { size: '2' }, { slippage: '3.01' }, { interval: '1' }, { stopLoss: '0' }, { size: '1e-4' }, { takeProfit: '0.001' }, { maxDaily: '0.001' }, { token: 'secret' }])
     assert.throws(() => f.engine.configure({ ...settings, ...patch }));
   assert.deepEqual(strategySettings(f.cfg), settings);
   assert.equal(f.store.get(f.engine.key('strategy')), undefined);
-  f.engine.start(); assert.throws(() => f.engine.configure(settings), /Stop the bot/);
-  f.engine.stop(); f.engine.busy = true; assert.throws(() => f.engine.configure(settings), /Stop the bot/);
+  f.engine.start(); f.engine.configure(settings); assert.equal(f.engine.active(), true);
+  f.engine.stop(); f.engine.busy = true; assert.throws(() => f.engine.configure(settings), /current trade/);
 });
 test('strategy API requires owner authentication and validates request payload', async t => {
   const f = fixture(t), token = '123:secret', owner = '456';
