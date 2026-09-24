@@ -115,7 +115,7 @@ function render(s) {
   $('balance-amount').disabled = locked || savingBalance || actionBusy;
   $('save-balance').disabled = locked || savingBalance || actionBusy;
   if (tracking) { text('available', '—'); text('available-note', 'Tracking uses no funds'); }
-  else text('available-note', s.mode === 'paper' ? 'SOL · resets to 1 on reopen/start' : 'SOL · available after gas reserve and fee buffer');
+  else text('available-note', s.mode === 'paper' ? 'SOL · resets to 1 on open/start/stop' : 'SOL · available after gas reserve and fee buffer');
   const strategyLocked = s.closing || !!s.pending;
   $('strategy-fields').disabled = strategyLocked || savingSettings;
   $('save-strategy').disabled = strategyLocked || savingSettings;
@@ -254,7 +254,7 @@ async function action(name) {
   if (actionBusy) return; actionBusy = true; if (state) render(state);
   try {
     const response = await api(name, 'POST');
-    if (name === 'start') recentSince = Date.now();
+    if (name === 'start' || name === 'stop') { recentSince = Date.now(); livePrice = null; }
     tg?.HapticFeedback?.notificationOccurred('success');
     toast(response.message || ({ start: 'Autopilot started.', stop: 'Bot stopped. Your position is kept.', close: 'Closing requested. The bot will remain stopped.', 'wallet/create': 'Wallet created. You can now deposit SOL.' })[name] || 'Done.');
     if (name === 'wallet/create') await wallet();
