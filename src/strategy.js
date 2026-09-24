@@ -1,13 +1,13 @@
-import { config, format, UserError, TRACKED_ASSETS } from './config.js';
+import { config, format, UserError, TRACKED_ASSETS, TOKENS } from './config.js';
 
 export function strategySettings(cfg) {
-  return { marketType: cfg.marketType || 'pair', asset: cfg.trackedAsset || cfg.base, type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
+  return { marketType: cfg.marketType || 'pair', asset: cfg.marketType === 'track' ? cfg.trackedAsset : (TRACKED_ASSETS.includes(cfg.trackedAsset || cfg.base) ? (cfg.trackedAsset || cfg.base) : TRACKED_ASSETS[0]), type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
     sizePercent: (cfg.tradePercentBps ?? Math.max(1, Math.min(10000, Number(BigInt(cfg.tradeSize) * 10000n / (10n ** BigInt(cfg.quoteDecimals)))))) / 100, stopLoss: cfg.stopLoss / 100,
     takeProfit: cfg.takeProfit / 100, slippage: cfg.slippage / 100,
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals), maxDaily: format(cfg.maxDaily, cfg.quoteDecimals) };
 }
 
-export function validateStrategy(input, pair = 'CBBTC_SOL') {
+export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
   const keys = ['fast', 'slow', 'interval', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade', 'maxDaily'];
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'marketType', 'asset', 'size', 'sizePercent', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
       keys.some(k => !Object.hasOwn(input, k) || !['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))
@@ -19,8 +19,8 @@ export function validateStrategy(input, pair = 'CBBTC_SOL') {
   if (!['pair', 'track'].includes(marketType)) throw new UserError('Choose paired trading or single-coin tracking.');
   const pairAsset = pair === 'SOL_USDC' ? 'SOL' : pair === 'USDC_SOL' ? 'USDC' : pair === 'DOGE_SOL' ? 'DOGE' : pair === 'CBBTC_SOL' ? 'cbBTC' : null;
   const selectedAsset = Object.hasOwn(input, 'asset') ? input.asset : pairAsset;
-  if (marketType === 'track' && !TRACKED_ASSETS.includes(selectedAsset)) throw new UserError('Choose SOL, ETH, DOGE, XRP, USDC, or USDT for tracking.');
-  const trackedAsset = TRACKED_ASSETS.includes(selectedAsset) ? selectedAsset : 'SOL';
+  if (marketType === 'track' && !TRACKED_ASSETS.includes(selectedAsset) && !(restore && Object.hasOwn(TOKENS, selectedAsset))) throw new UserError('Choose a tracked coin from the supported Trading Asset list.');
+  const trackedAsset = TRACKED_ASSETS.includes(selectedAsset) || (restore && marketType === 'track' && Object.hasOwn(TOKENS, selectedAsset)) ? selectedAsset : TRACKED_ASSETS[0];
   const numeric = (key, fallback, min, max, integer = false) => {
     const value = Object.hasOwn(input, key) ? input[key] : fallback;
     const n = Number(value);

@@ -92,7 +92,7 @@ export class Engine {
     // A host restart must never silently resume automated spending.
     this.store.set('running', false);
     const saved = this.store.get(this.key('strategy'));
-    if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair));
+    if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair, true));
     else this.cfg.tradePercentBps = Math.max(1, Math.min(10000, Math.round(this.defaultStrategy.sizePercent * 100)));
   }
   configure(settings) {
@@ -167,7 +167,7 @@ export class Engine {
       throw new UserError('Close your live position before switching to paper mode.');
     if (mode === 'live' && this.market().executable && (!acknowledged || !this.wallet))
       throw new UserError('Unlock your wallet and acknowledge real-fund trading before selecting live.');
-    const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair);
+    const settings = validateStrategy(this.store.get(`${this.cfg.pair === 'DOGE_SOL' ? '' : this.cfg.pair + ':'}${mode}:strategy`) || this.defaultStrategy, this.cfg.pair, true);
     if (mode === 'live') this.bindWallet(this.wallet.address);
     this.stop();
     Object.assign(this.cfg, settings, { mode });

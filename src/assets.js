@@ -1,60 +1,8 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { TOKENS, UserError } from './config.js';
+import { TOKENS, UserError, ASSETS } from './config.js';
 import { Jupiter } from './providers.js';
 
-// Fixed Jupiter organic-score snapshot, 2026-09-25. See TRADING_ASSETS.md.
-export const ASSETS = [
-  {
-    "symbol": "USDC",
-    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "decimals": 6
-  },
-  {
-    "symbol": "USDT",
-    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-    "decimals": 6
-  },
-  {
-    "symbol": "JUP",
-    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-    "decimals": 6
-  },
-  {
-    "symbol": "RAY",
-    "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-    "decimals": 6
-  },
-  {
-    "symbol": "ZEC",
-    "mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
-    "decimals": 8
-  },
-  {
-    "symbol": "STONK",
-    "mint": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx",
-    "decimals": 9
-  },
-  {
-    "symbol": "JitoSOL",
-    "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
-    "decimals": 9
-  },
-  {
-    "symbol": "MET",
-    "mint": "METvsvVRapdj9cFLzq4Tr43xK4tAjQfwX76z3n6mWQL",
-    "decimals": 6
-  },
-  {
-    "symbol": "USELESS",
-    "mint": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
-    "decimals": 6
-  },
-  {
-    "symbol": "PENGU",
-    "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
-    "decimals": 6
-  }
-];
+export { ASSETS } from './config.js';
 
 export function selectedPreset(input) {
   const preset = ASSETS.find(a => a.symbol === input?.preset);
