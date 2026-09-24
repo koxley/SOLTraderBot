@@ -338,6 +338,13 @@ export class Engine {
         this.store.set(this.key('position'), aggregate([...lotsOf(old), { id: order.id, amount: actualOutput, cost: actualInput, opened: this.now() }]));
       } else {
         const reduced = reduceLots(old, actualInput, order.lotId);
+        let allocatedAmount = 0n, allocatedProceeds = 0n;
+        order.buyAllocations = reduced.allocations.map(allocation => {
+          allocatedAmount += BigInt(allocation.amount);
+          const cumulative = BigInt(actualOutput) * allocatedAmount / BigInt(actualInput);
+          const proceeds = cumulative - allocatedProceeds; allocatedProceeds = cumulative;
+          return { ...allocation, proceeds: proceeds.toString(), realizedQuote: (proceeds - BigInt(allocation.cost)).toString() };
+        });
         order.realizedQuote = (BigInt(actualOutput) - reduced.cost).toString();
         this.store.set(this.key('position'), reduced.position);
       }

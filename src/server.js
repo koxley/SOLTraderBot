@@ -47,6 +47,17 @@ export function snapshot(engine) {
   const orders = engine.orders().filter(o => o.mode === cfg.mode).sort((a, b) => b.time - a.time);
   const realized = orders.reduce((n, o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n) -
     (cfg.mode === 'paper' ? BigInt(engine.store.get(engine.key('realizedBaseline')) || '0') : 0n);
+  const sellLinks = new Map();
+  for (const sell of orders.filter(o => o.status === 'filled' && o.side === 'sell')) {
+    for (const allocation of sell.buyAllocations || []) {
+      const links = sellLinks.get(allocation.buyId) || [];
+      links.push({ sellId: sell.id, time: sell.time, ...allocation }); sellLinks.set(allocation.buyId, links);
+    }
+  }
+  const allocationView = allocation => ({ ...allocation,
+    amount: format(allocation.amount, cfg.tokens[cfg.base].decimals),
+    cost: format(allocation.cost, cfg.quoteDecimals), proceeds: format(allocation.proceeds, cfg.quoteDecimals),
+    realized: Number(allocation.realizedQuote) / 10 ** cfg.quoteDecimals });
   const last = samples.at(-1);
   return { pair: cfg.pair, assets: ASSETS, base: cfg.base, quote: cfg.quote, quoteDecimals: cfg.quoteDecimals, marketType: cfg.marketType || 'pair', trackedAsset: cfg.trackedAsset, market, marketKey: `${cfg.marketType || 'pair'}:${market.asset}:${market.reference}`, mode: cfg.mode, running: engine.active(), closing: engine.closing, busy: engine.busy, error: engine.store.get('lastError') || '',
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
@@ -66,6 +77,9 @@ export function snapshot(engine) {
     paperStartingBalance: format(engine.store.get(engine.key('startingBalance')) ?? (10n ** BigInt(cfg.quoteDecimals)).toString(), cfg.quoteDecimals),
     tradeCount: orders.length,
     trades: orders.slice(0, 30).map(o => ({ id: o.id, mode: o.mode, side: o.side, reason: o.reason, status: o.status,
+      buyAllocations: (o.buyAllocations || []).map(allocationView),
+      sellAllocations: (sellLinks.get(o.id) || []).map(allocationView),
+      relationshipKnown: o.side === 'buy' || Array.isArray(o.buyAllocations),
       time: o.time, input: o.input, output: o.output, amount: format(o.actualInput || o.amount, cfg.tokens[o.input].decimals),
       received: o.actualOutput ? format(o.actualOutput, cfg.tokens[o.output].decimals) : null, signature: o.signature })),
   };
