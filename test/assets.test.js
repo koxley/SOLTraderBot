@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { config, TOKENS } from '../src/config.js';
-import { ASSETS, assetConfig, resolveAsset } from '../src/assets.js';
+import { ASSETS, assetConfig, resolveAsset, selectedPreset } from '../src/assets.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import { appServer, snapshot } from '../src/server.js';
 import { strategySettings } from '../src/strategy.js';
 
 const usdt = ASSETS.find(a => a.symbol === 'USDT');
-const btc = ASSETS.find(a => a.symbol === 'cbBTC');
+const btc = { symbol: 'cbBTC', ...TOKENS.cbBTC };
 function fixture(t) {
   const cfg = config({}, false), store = new Store(':memory:', cfg.paper);
   const provider = { cfg, quote: async (from, to, amount) => ({ inputMint: cfg.tokens[from].mint,
@@ -22,7 +22,7 @@ test('asset selection persists, restores before startup and keeps charts, histor
   engine.configure({ ...strategySettings(cfg), fast: 3 });
   store.set(engine.key('samples'), [{ time: 1, price: '500000000000' }]);
   store.put({ id: 'old', pair: cfg.pair, mode: 'paper', status: 'filled', time: 1 });
-  await engine.changeAsset({}, async () => usdt);
+  await engine.changeAsset({ preset: 'USDT' }, async () => usdt);
   assert.equal(cfg.base, 'USDT'); assert.equal(engine.active(), false);
   assert.equal(snapshot(engine).samples.length, 0); assert.equal(engine.orders().length, 0);
   assert.deepEqual(await engine.balances(), { SOL: '2000000000', USDT: '0' });
@@ -30,29 +30,28 @@ test('asset selection persists, restores before startup and keeps charts, histor
   const fresh = config({}, false);
   const reopened = new Engine(fresh, store, provider);
   assert.equal(fresh.base, 'USDT'); assert.equal(fresh.tokens.USDT.decimals, 6); assert.equal(fresh.fast, 4);
-  await reopened.changeAsset({}, async () => btc);
-  assert.equal(fresh.fast, 3); assert.equal(reopened.orders().length, 1);
-  assert.equal(store.get(reopened.key('samples'))[0].price, '500000000000');
+  await assert.rejects(reopened.changeAsset({ preset: 'cbBTC' }, async () => btc), /supported trading pairs/);
+  assert.equal(store.get('CBBTC_SOL:paper:samples')[0].price, '500000000000');
 });
 test('asset switching refuses running, busy, closing, any unresolved order and either mode position', async t => {
   const { engine, store } = fixture(t);
-  engine.start(); await assert.rejects(engine.changeAsset({}, async () => usdt), /Stop/); engine.stop();
-  engine.busy = true; await assert.rejects(engine.changeAsset({}, async () => usdt), /Stop/); engine.busy = false;
-  engine.closing = true; await assert.rejects(engine.changeAsset({}, async () => usdt), /Stop/); engine.closing = false;
+  engine.start(); await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => usdt), /Stop/); engine.stop();
+  engine.busy = true; await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => usdt), /Stop/); engine.busy = false;
+  engine.closing = true; await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => usdt), /Stop/); engine.closing = false;
   for (const mode of ['paper', 'live']) {
     store.set(`CBBTC_SOL:${mode}:position`, { amount: '1', cost: '1' });
-    await assert.rejects(engine.changeAsset({}, async () => usdt), /Close/);
+    await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => usdt), /Close/);
     store.set(`CBBTC_SOL:${mode}:position`, null);
   }
   store.put({ id: 'unresolved', pair: 'other', mode: 'live', status: 'unknown' });
-  await assert.rejects(engine.changeAsset({}, async () => usdt), /settle/);
+  await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => usdt), /settle/);
 });
 test('failed validation and stop during validation leave original market untouched', async t => {
   const { engine, store, cfg } = fixture(t);
-  await assert.rejects(engine.changeAsset({}, async () => { throw new Error('No route'); }), /No route/);
+  await assert.rejects(engine.changeAsset({ preset: 'USDT' }, async () => { throw new Error('No route'); }), /No route/);
   assert.equal(cfg.base, 'cbBTC'); assert.equal(store.get('selectedAsset'), undefined); assert.equal(engine.busy, false);
   let finish;
-  const pending = engine.changeAsset({}, () => new Promise(resolve => { finish = resolve; }));
+  const pending = engine.changeAsset({ preset: 'USDT' }, () => new Promise(resolve => { finish = resolve; }));
   assert.throws(() => engine.start(), /operation/);
   engine.stop(); finish(usdt); await assert.rejects(pending, /cancelled/);
   assert.equal(cfg.base, 'cbBTC'); assert.equal(engine.busy, false);
@@ -88,7 +87,7 @@ test('asset API clears old price cache and returns selected token precision', as
 
  test('selected six-decimal asset is bought and sold with correctly labeled receipts', async t => {
   const { engine, cfg } = fixture(t);
-  await engine.changeAsset({}, async () => usdt);
+  await engine.changeAsset({ preset: 'USDT' }, async () => usdt);
   engine.start(); await engine.trade({ side: 'buy', reason: 'test' });
   assert.equal(engine.position().amount, '995000');
   assert.equal(snapshot(engine).position.amount, '0.995');
@@ -98,4 +97,16 @@ test('asset API clears old price cache and returns selected token precision', as
   assert.equal(engine.orders()[0].input, 'USDT');
   assert.equal((await engine.balances()).USDT, '970125');
   engine.requestClose(); await engine.tick(); assert.equal(engine.position(), null);
+});
+
+test('ten fixed mints and preset-only selection; legacy configuration remains readable', async t => {
+  const { engine, cfg } = fixture(t);
+  assert.equal(ASSETS.length, 10);
+  assert.equal(new Set(ASSETS.map(a => a.mint)).size, 10);
+  for (const asset of ASSETS) assert.equal(assetConfig(cfg, asset).base, asset.symbol);
+  for (const input of [{preset:'custom',symbol:'ABC',mint:TOKENS.DOGE.mint}, {preset:'USDC',mint:TOKENS.DOGE.mint}, {}]) {
+    assert.throws(() => selectedPreset(input), /supported/);
+    await assert.rejects(engine.changeAsset(input, async () => { throw new Error('must not resolve'); }), /supported/);
+  }
+  assert.equal(assetConfig(cfg, btc).base, 'cbBTC');
 });
