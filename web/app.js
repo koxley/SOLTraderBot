@@ -3,6 +3,7 @@ tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
+let assetDirty = false, savingAsset = false;
 let recentSince = Date.now();
 let savingBalance = false;
 let livePrice = null, priceBusy = false, priceFailed = false;
@@ -13,13 +14,28 @@ const number = (v, max = 6) => Number(v).toLocaleString('en-US', { maximumFracti
 const text = (id, value) => { $(id).textContent = value; };
 function toast(message) { text('toast', message); $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 6000); }
 async function api(path, method = 'GET', body) {
-  const response = await fetch('/api/' + path, { method, headers: { Authorization: `tma ${tg?.initData || ''}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000) });
+  const response = await fetch('/api/' + path, { method, headers: { Authorization: `tma ${tg?.initData || ''}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(path === 'asset' ? 60000 : 20000) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;
 }
 function render(s) {
+  if (state?.pair !== s.pair) { livePrice = null; recentSince = Date.now(); settingsDirty = false; }
   state = s;
+  text('market-pair', `SOL / ${s.base}`);
+  text('market-name', `${s.base} · Solana`);
+  text('asset-icon', s.base === 'cbBTC' ? '₿' : s.base.slice(0, 1));
+  text('price-label', `${s.base} price in SOL`);
+  text('position-symbol', s.base);
+  text('position-help', `The bot buys ${s.base} with SOL when its entry signal fires.`);
+  text('deposit-title', `Deposit SOL or ${s.base}`);
+  if (!assetDirty && !savingAsset) {
+    $('asset-preset').value = s.assets?.find(a => a.mint === s.tokenMint)?.symbol || 'custom';
+    $('asset-symbol').value = s.base; $('asset-mint').value = s.tokenMint;
+    updateAssetFields();
+  }
+  $('asset-fields').disabled = savingAsset || actionBusy || s.running || s.busy || s.closing || !!s.pending || !!s.position;
+  text('asset-address', `Current ${s.base} mint: ${s.tokenMint}`);
   $('connection-error').hidden = true;
   $('demo-banner').hidden = !s.demo;
   $('setup-notice').hidden = s.pairReady;
@@ -33,7 +49,7 @@ function render(s) {
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
   text('status-pill', s.closing ? 'Closing' : s.running ? 'Running' : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
-  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? 'Selling the bot’s cbBTC position back to SOL. Trading will stay stopped.' : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
+  text('status-detail', s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? `Selling the bot’s ${s.base} position back to SOL. Trading will stay stopped.` : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for a crossover. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
   text('warmup-text', `${s.warmup} / ${s.warmupRequired} samples`);
   $('warmup-progress').max = s.warmupRequired; $('warmup-progress').value = s.warmup;
   $('start').disabled = actionBusy || s.running || s.closing || !!s.pending || !s.pairReady || (s.mode === 'live' && !s.wallet);
@@ -46,7 +62,7 @@ function render(s) {
   text('ema', `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
   text('trade-size', s.strategy.size + ' SOL'); text('stop-loss', s.strategy.stopLoss + '%'); text('take-profit', s.strategy.takeProfit + '%');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
-  text('mint-label', 'cbBTC mint: ' + s.tokenMint);
+  text('mint-label', s.base + ' mint: ' + s.tokenMint);
   text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
   text('dashboard-trade-count', s.mode.toUpperCase());
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
@@ -74,7 +90,7 @@ function renderTrades(trades, target) {
     const row = document.createElement('div'); row.className = 'trade-item';
     const icon = document.createElement('div'); icon.className = 'trade-icon ' + trade.side; icon.textContent = trade.side === 'buy' ? '↗' : '↙';
     const info = document.createElement('div'); info.className = 'trade-info';
-    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought cbBTC' : 'Sold cbBTC';
+    const title = document.createElement('strong'); title.textContent = trade.side === 'buy' ? 'Bought ' + trade.output : 'Sold ' + trade.input;
     if (trade.status !== 'filled') title.textContent = (trade.side === 'buy' ? 'Buy' : 'Sell') + ' · ' + trade.status;
     const status = document.createElement('small'); status.className = 'transaction-status';
     const labels = { filled: 'Completed', submitting: 'Submitting', unknown: 'Needs reconciliation', failed: 'Failed', expired: 'Expired' };
@@ -107,7 +123,7 @@ function drawChart(samples) {
   ctx.strokeStyle = '#25302f'; ctx.lineWidth = .6; ctx.setLineDash([3, 5]);
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
   ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
-  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', 'Observed cbBTC price in SOL. Waiting for price samples; no open position.'); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
+  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', `Observed ${state?.base || 'asset'} price in SOL. Waiting for price samples; no open position.`); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
   const values = samples.length > 1 ? samples.map(s => s.price) : [...samples.map(s => s.price), ...levels.map(level => level.price)];
   const low = Math.min(...values), high = Math.max(...values);
   const padding = Math.max((high - low) * .15, Math.abs(high) * .000001, Number.EPSILON);
@@ -146,7 +162,7 @@ function drawChart(samples) {
     ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
     ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
   }
-  canvas.setAttribute('aria-label', `Observed cbBTC price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? "Preview levels, no open position: " : "Position levels: ") + levelText + ". " : ""}Details in Transactions.`);
+  canvas.setAttribute('aria-label', `Observed ${state?.base || 'asset'} price in SOL. ${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? "Preview levels, no open position: " : "Position levels: ") + levelText + ". " : ""}Details in Transactions.`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 function renderPrice() {
@@ -157,7 +173,7 @@ function renderPrice() {
 async function refreshPrice() {
   if (priceBusy) return;
   priceBusy = true;
-  try { livePrice = await api('price'); priceFailed = false; }
+  try { const quote = await api('price'); if (!savingAsset && (!state?.pair || quote.pair === state.pair)) livePrice = quote; priceFailed = false; }
   catch { priceFailed = true; }
   finally { priceBusy = false; renderPrice(); }
 }
@@ -175,10 +191,10 @@ async function wallet() {
     $('generate-key').hidden = w.exists;
     $('create-wallet').hidden = w.exists; $('wallet-balances').hidden = !w.exists || !!w.locked; $('deposit-card').hidden = !w.exists || !!w.locked;
     text('wallet-heading', w.exists ? 'Your trading wallet' : 'Create your Solana wallet');
-    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : 'Your wallet can receive cbBTC and SOL on Solana.' : 'A dedicated wallet for your bot. Deposit SOL to fund automatic cbBTC buys and network fees.');
+    text('wallet-description', w.exists ? w.demo ? 'Preview wallet. No real deposits can be made here.' : `Your wallet can receive ${state?.base || 'your selected token'} and SOL on Solana.` : 'A dedicated wallet for your bot. Deposit SOL to fund automatic asset buys and network fees.');
     if (w.locked) { text('wallet-heading', 'Unlock your trading wallet'); text('wallet-description', 'Enter the original encryption key above. Your wallet and funds are preserved.'); }
     if (w.exists && !w.locked) {
-      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance.cbBTC) / 1e8, 8) + ' cbBTC' : 'You can still copy your receiving address.');
+      text('wallet-sol', w.balance ? number(Number(w.balance.SOL) / 1e9) + ' SOL' : 'Balance unavailable'); text('wallet-doge', w.balance ? number(Number(w.balance[state?.base] || 0) / 10 ** (state?.tokenDecimals || 0), 8) + ' ' + (state?.base || 'asset') : 'You can still copy your receiving address.');
       $('wallet-address').value = w.address;
       $('deposit-qr').hidden = !!w.demo; if (w.qr) $('deposit-qr').src = w.qr;
       $('explorer').hidden = !!w.demo; if (!w.demo) $('explorer').href = 'https://solscan.io/account/' + w.address;
@@ -277,3 +293,25 @@ setInterval(() => { if (!document.hidden) refreshPrice(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPrice(); });
 setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 setInterval(() => { if (!document.hidden) { balances(); if (activeView === 'wallet-view') wallet(); } }, 15000);
+
+function updateAssetFields() {
+  const custom = $('asset-preset').value === 'custom';
+  $('asset-custom').hidden = !custom;
+  $('asset-symbol').required = custom; $('asset-mint').required = custom;
+}
+$('asset-preset').addEventListener('change', updateAssetFields);
+$('asset-form').addEventListener('input', () => { assetDirty = true; });
+$('asset-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (savingAsset || actionBusy) return;
+  const input = { preset: $('asset-preset').value, symbol: $('asset-symbol').value, mint: $('asset-mint').value };
+  savingAsset = true; actionBusy = true; $('asset-error').hidden = true;
+  text('asset-status', 'Checking mint and buy/sell routes…'); if (state) render(state);
+  try {
+    const result = await api('asset', 'POST', input);
+    livePrice = null; assetDirty = false; settingsDirty = false;
+    render({ ...result, demo: state?.demo });
+    text('asset-status', `${result.base} saved. Trading remains stopped.`);
+    toast('Asset saved. Start the bot when ready.');
+  } catch (error) { text('asset-error', error.message); $('asset-error').hidden = false; text('asset-status', 'Refresh to check the current asset before retrying.'); }
+  finally { savingAsset = false; actionBusy = false; await refresh(); await balances(); await refreshPrice(); }
+});

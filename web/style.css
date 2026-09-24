@@ -5,6 +5,7 @@
 .bottom-nav{grid-template-columns:repeat(4,1fr)}#strategy-fields{border:0;padding:0;margin:22px 0}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.strategy-field{display:flex;flex-direction:column;gap:9px;font-size:11px;color:var(--muted)}.strategy-field input{width:100%;min-width:0;color:var(--text);border:1px solid #384352;border-radius:8px;padding:12px;background:#0c1119}.strategy-field input:disabled{opacity:.5}#settings-lock{margin-top:18px}@media(max-width:350px){.settings-grid{grid-template-columns:1fr}}
 
 .mode-controls select,#wallet-key{display:block;width:100%;padding:14px;margin:12px 0;border:1px solid #394438;border-radius:10px;background:#111820;color:#fff;font:inherit}.mode-controls label{font-weight:600}#key-backed-up{margin:14px 8px 14px 0}
+#asset-fields{border:0;padding:0;margin:20px 0;min-width:0}#asset-preset{width:100%;min-width:0;padding:14px;border:1px solid #384352;border-radius:9px;background:#0c1119;color:var(--text);font:inherit}#asset-custom .strategy-field{margin-top:18px}#asset-address{overflow-wrap:anywhere}#asset-preset:focus-visible{outline:2px solid var(--green);outline-offset:4px}
 
 .transaction-status{font-weight:600;color:#b6f36b}.trade-result{overflow-wrap:anywhere;min-width:0}.trade-info{min-width:0}.trade-info small{overflow-wrap:anywhere}
 
