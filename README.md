@@ -1,4 +1,4 @@
-> Trading now supports independent buys and partial sells, percentage trade sizing, and separate TP/SL for each buy. See [STRATEGIES.md](STRATEGIES.md) for current behavior and migration.
+> Trading now supports independent buys and partial sells, percentage trade sizing, and strategy-driven exits. See [STRATEGIES.md](STRATEGIES.md) for current behavior and migration.
 
 > **Current release:** selectable SOL-funded paired trading plus no-trade single-coin tracking. See [SOL-CBBTC.md](SOL-CBBTC.md) for the default cbBTC market.
 
@@ -63,7 +63,7 @@ Changing between paired trading and tracking clears the old market's samples so 
 
 An already-submitted transaction cannot be cancelled. Close waits for an in-progress operation; an unknown outcome must be reconciled before closing. Externally deposited tokens are not treated as an open strategy position and are not sold by Close. A restart always leaves the strategy stopped while preserving balances, position, and trade records.
 
-The default paired strategy samples every 15 seconds and uses an EMA 5/12 crossover, a 2% trailing stop, and a 3% take-profit threshold. EMA, SMA, RSI, and Bollinger strategies are selectable. Tracking applies the selected indicator settings to one coin but does not use trade size, stop loss, or take profit. Samples are observed quotes, not exchange OHLC candles. After a long gap, indicator history warms up again; a paired position can still trigger its price exits. Multiple buy lots can remain open; each has separate TP/SL tracking. These strategies are configurable examples, not backtested profitability claims.
+The default paired strategy samples every 15 seconds and uses an EMA 5/12 crossover. EMA, SMA, RSI, and Bollinger strategies are selectable. Automatic sells follow strategy signals only; Close Open Positions remains available. TP, SL, and trailing stops are removed, including for existing holdings. Old saved thresholds are ignored. After a long gap, indicators must warm up before generating trades. Tracking creates no trades. Samples are observed quotes, not exchange OHLC candles. These strategies are configurable examples, not backtested profitability claims.
 
 Strategy exits are checked only while the process is online and the bot is running. They are not on-chain limit orders and cannot guarantee an exit price. Quote outages, illiquidity, slippage, and network failures can prevent exits. A failed validation stops the bot and displays the reason. Generic transient failures stop it after three consecutive attempts.
 
