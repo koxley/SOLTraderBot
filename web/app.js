@@ -111,10 +111,10 @@ function drawChart(samples) {
   const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
   const levels = Number.isFinite(entry) && entry > 0 ? [
     { name: 'TP', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
-    { name: 'SL', price: entry * (1 - state.strategy.stopLoss / 100), color: '#f09391', offset: 12 }
+    { name: 'SL', price: previewLevels ? entry * (1 - state.strategy.stopLoss / 100) : (state.position.stopPrice ?? entry * (1 - state.strategy.stopLoss / 100)), color: '#f09391', offset: 12 }
   ] : [];
   const levelText = levels.map(level => `${level.name} ${Number(level.price.toPrecision(8))} ${state?.quote || 'SOL'}`).join(' · ');
-  text('chart-levels', levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
+  text('chart-levels', levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : state.position.slTrailing ? 'Open position · trailing SL active. ' : 'Open position · entry-based levels. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
