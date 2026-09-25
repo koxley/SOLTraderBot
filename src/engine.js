@@ -219,10 +219,10 @@ export class Engine {
     const buckets = new Map();
     for (const sample of [...(this.store.get(key) || []), ...samples]) {
       if (!Number.isFinite(sample.time) || sample.time < now - 15 * 60 * 1000 || sample.time > now || !/^\d+$/.test(String(sample.price)) || BigInt(sample.price) <= 0n) continue;
-      const time = Math.floor(sample.time / 15000) * 15000;
+      const time = Math.floor(sample.time / 5000) * 5000;
       buckets.set(time, { time, price: String(sample.price) });
     }
-    const history = [...buckets.values()].sort((a,b) => a.time-b.time).slice(-60);
+    const history = [...buckets.values()].sort((a,b) => a.time-b.time).slice(-180);
     this.store.set(key, history); return history;
   }
   restoreChart() {

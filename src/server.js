@@ -65,7 +65,7 @@ export function snapshot(engine) {
     wallet: engine.wallet?.address || null, pairReady: cfg.pairReady, dogeMint: cfg.tokens[cfg.base].mint, dogeDecimals: cfg.tokens[cfg.base].decimals, usdcMint: cfg.tokens.USDC.mint, tokenMint: cfg.tokens[cfg.splToken].mint, tokenDecimals: cfg.tokens[cfg.splToken].decimals, pending: engine.pending().length,
     assetMint: cfg.tokens[market.asset].mint, tracker: engine.store.get(engine.key('tracker')) || null,
     price: last ? Number(last.price) / 10 ** referenceDecimals : null,
-    chartInterval: 15, chartReset: Boolean(engine.store.get(engine.key('chartReset'))),
+    chartInterval: 5, chartReset: Boolean(engine.store.get(engine.key('chartReset'))),
     samples: chartSamples.map(s => ({ time: s.time, price: Number(s.price) / 10 ** referenceDecimals })),
     warmup: Math.min(samples.length, warmup(cfg)), warmupRequired: warmup(cfg),
     position: market.executable && p ? { amount: format(p.amount, cfg.tokens[cfg.base].decimals), cost: format(p.cost, cfg.quoteDecimals),
@@ -119,7 +119,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       lastPrice = { pair: cfg.pair, marketKey: `${cfg.marketType || 'pair'}:${market.asset}:${market.reference}`, price: Number(q.outAmount) / 10 ** cfg.tokens[market.reference].decimals, time: now };
       const chart = engine.store.get(chartKey) || [];
       // Display sampling is independent of trading, EMA warm-up and strategy intervals.
-      const bucket = Math.floor(now / 15000) * 15000;
+      const bucket = Math.floor(now / 5000) * 5000;
       engine.rememberChart([{ time: now, price: q.outAmount }]);
       if (!engine.store.get(engine.key('chartReset')) && (!chart.length || bucket > chart.at(-1).time)) {
         chart.push({ time: bucket, price: q.outAmount });
