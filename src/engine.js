@@ -22,6 +22,8 @@ export function validateQuote(q, input, output, amount, cfg, live = false) {
 }
 
 export function ema(values, period) {
+  if (!values.length) return 0;
+  period = Math.min(period, values.length);
   let result = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
   const alpha = 2 / (period + 1);
   for (let i = period; i < values.length; i++) result += alpha * (values[i] - result);
@@ -257,7 +259,7 @@ export class Engine {
       const amount = (10n ** BigInt(this.cfg.tokens[market.asset].decimals)).toString();
       const q = validateQuote(await this.jupiter.quote(market.asset, market.reference, amount), market.asset, market.reference, amount, this.cfg);
       samples.push({ time: this.now(), price: q.outAmount });
-      samples = samples.slice(-warmup(this.cfg) * 10);
+      samples = samples.slice(-Math.max(10, this.cfg.slow + 1, (this.cfg.rsiPeriod ?? 14) + 2, (this.cfg.bbPeriod ?? 20) + 1) * 10);
       this.store.set(this.key('samples'), samples);
       this.store.set('lastTick', this.now());
       if (!market.executable) {

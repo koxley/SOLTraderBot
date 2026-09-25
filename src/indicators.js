@@ -1,10 +1,8 @@
-export function warmup(cfg) {
-  if (cfg.strategyType === 'rsi') return (cfg.rsiPeriod ?? 14) + 2;
-  if (cfg.strategyType === 'bollinger') return (cfg.bbPeriod ?? 20) + 1;
-  return cfg.slow + 1;
-}
-export function sma(values, period) { return values.slice(-period).reduce((a, b) => a + b, 0) / period; }
+export function warmup() { return 10; }
+export function sma(values, period) { const window = values.slice(-period); return window.length ? window.reduce((a, b) => a + b, 0) / window.length : 0; }
 export function rsi(values, period) {
+  period = Math.min(period, values.length - 1);
+  if (period < 1) return 50;
   let gain = 0, loss = 0;
   for (let i = 1; i <= period; i++) { const d = values[i] - values[i - 1]; gain += Math.max(0, d) / period; loss += Math.max(0, -d) / period; }
   for (let i = period + 1; i < values.length; i++) { const d = values[i] - values[i - 1]; gain = (gain * (period - 1) + Math.max(0, d)) / period; loss = (loss * (period - 1) + Math.max(0, -d)) / period; }
@@ -12,7 +10,7 @@ export function rsi(values, period) {
 }
 export function bands(values, period, deviation) {
   const middle = sma(values, period);
-  const sd = Math.sqrt(values.slice(-period).reduce((sum, v) => sum + (v - middle) ** 2, 0) / period);
+  const sd = Math.sqrt(values.slice(-period).reduce((sum, v) => sum + (v - middle) ** 2, 0) / Math.min(period, values.length));
   return { middle, lower: middle - deviation * sd, upper: middle + deviation * sd };
 }
 export function alternativeSignal(prices, position, cfg) {
