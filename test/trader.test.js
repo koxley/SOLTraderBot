@@ -196,16 +196,16 @@ test('live execution requires explicit local acknowledgement; invalid strategy r
   assert.throws(() => config({ TRADING_MODE: 'live' }, false));
   assert.throws(() => config({ EMA_FAST: '12', EMA_SLOW: '5' }, false));
 });
-test('EMA buy crossover and no threshold exits before warm-up', () => {
+test('EMA buy crossover and TP SL exits before warm-up', () => {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3' }, false);
   const series = [...Array(9).fill(100), 130].map(price => ({ price: String(price * 10000) }));
   assert.equal(signal(series, null, cfg).side, 'buy');
-  assert.equal(signal([{ price: '960000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
-  assert.equal(signal([{ price: '1070000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
+  assert.deepEqual(signal([{ price: '980000' }], { amount: '100000000', cost: '1000000' }, cfg), {side:'sell',reason:'Stop loss',exitAll:true});
+  assert.deepEqual(signal([{ price: '1030000' }], { amount: '100000000', cost: '1000000' }, cfg), {side:'sell',reason:'Take profit',exitAll:true});
   assert.equal(signal(series.slice(0, 2), null, cfg), null);
 });
 test('automatic crossover buys and strategy sells the configured percentage', async t => {
-  const f = fixture(t); f.engine.start();
+  const f = fixture(t); f.engine.configure({...strategySettings(f.cfg),stopLoss:90,takeProfit:500}); f.engine.start();
   for (const price of [...Array(9).fill(1000000), 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
   assert.equal(f.store.orders().length, 1); assert.ok(f.engine.position());
   f.price(900000); await f.engine.tick();

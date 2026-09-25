@@ -1,6 +1,6 @@
 # Selectable strategies
 
-Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 5/12 with 30-second samples, 10% sizing, 0.1 SOL maximum entry, 0.5% slippage. Existing saved settings remain unchanged. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
+Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 5/12 with 30-second samples, 10% sizing, 2.5% take profit, 1.5% stop loss, 0.1 SOL maximum entry, and 0.5% slippage. Existing saved settings without TP or SL receive those defaults. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
 
 | Strategy | Entry | Strategy exit | Defaults |
 |---|---|---|---|
@@ -29,7 +29,7 @@ A buy signal can add another buy even while holdings are open. Ordinary sell sig
 
 Each buy retains its own entry cost. Close Open Positions sells all bot-held tokens. Restart, partial sells and trade reconciliation retain remaining buy lots and their cost basis.
 
-The app lists each open buy with its amount and cost. The chart shows prices and buy/sell markers, without exit levels. Legacy exit settings and trailing-high data are ignored. Existing fixed-size settings are converted to a percentage of the former 1 SOL reference balance (for example 0.025 SOL becomes 2.5%), rounded to two percentage decimals and bounded to 0.01%-100%; review the new percentage in Strategy. The inverse legacy USDC-funded market uses a 1 USDC reference instead.
+The app lists each open buy with its amount and cost. The chart shows prices, buy/sell markers, and TP/SL levels calculated from the weighted-average entry of the full open position. With no position, the chart previews levels from the latest quote. Saving TP or SL while running changes the active thresholds and chart immediately without restarting or resetting warm-up; execution checks them at the next strategy sample. Reaching either threshold closes the full position. Existing fixed-size settings are converted to a percentage of the former 1 SOL reference balance (for example 0.025 SOL becomes 2.5%), rounded to two percentage decimals and bounded to 0.01%-100%; review the new percentage in Strategy. The inverse legacy USDC-funded market uses a 1 USDC reference instead.
 
 Signals retain their existing timing: crossover/recovery entries require a fresh crossing, while sell conditions are checked at each strategy sample. Multiple buys do not mean buying on every price refresh.
 

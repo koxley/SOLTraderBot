@@ -124,6 +124,8 @@ export function config(env = process.env, requireTelegram = true) {
     apiKey: env.JUPITER_API_KEY || '', rpc, keyPath: env.WALLET_KEYPAIR_PATH,
     dataDir: resolve(env.DATA_DIR || './data'),
     slippage: integer('SLIPPAGE_BPS', 50, 1, 300),
+    stopLoss: integer('STOP_LOSS_BPS', 150, 1, 9000),
+    takeProfit: integer('TAKE_PROFIT_BPS', 250, 1, 50000),
     ttl: integer('QUOTE_TTL_SECONDS', 20, 5, 30) * 1000,
     tokens: { ...TOKENS, DOGE: { mint: dogeMint, decimals: dogeDecimals } },
     pairReady: true,

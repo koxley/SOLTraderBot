@@ -32,6 +32,14 @@ export function ema(values, period) {
 
 export function signal(samples, position, cfg) {
   if (!samples.length) return null;
+  if (position) {
+    const last = BigInt(samples.at(-1).price), amount = BigInt(position.amount), cost = BigInt(position.cost);
+    const scale = 10n ** BigInt(cfg.tokens[cfg.base].decimals);
+    if (last * amount * 10000n <= cost * scale * BigInt(10000 - cfg.stopLoss))
+      return { side: 'sell', reason: 'Stop loss', exitAll: true };
+    if (last * amount * 10000n >= cost * scale * BigInt(10000 + cfg.takeProfit))
+      return { side: 'sell', reason: 'Take profit', exitAll: true };
+  }
   if (samples.length < warmup(cfg)) return null;
   const prices = samples.map(s => Number(s.price));
   if (cfg.strategyType && cfg.strategyType !== 'ema') return alternativeSignal(prices, position, cfg);
@@ -303,7 +311,7 @@ export class Engine {
       }
       const decision = signal(samples, this.position(), this.cfg);
       if (!decision || !this.active()) { this.store.set('errors', 0); return null; }
-      const result = await this.trade(decision);
+      const result = await this.trade(decision, decision.exitAll === true);
       this.store.set('errors', 0);
       return result;
     } catch (error) {
@@ -436,6 +444,6 @@ export class Engine {
     const p = this.position();
     const market = this.market();
     const heading = market.executable ? `${market.asset}/${market.reference} trading` : `${market.asset} single-coin tracking (${market.reference} reference; no trades)`;
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nStop loss: ${this.cfg.stopLoss / 100}% · Take profit: ${this.cfg.takeProfit / 100}%\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
   }
 }

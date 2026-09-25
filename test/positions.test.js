@@ -31,16 +31,14 @@ test('consecutive buys use changing cash balances; consecutive sells reduce olde
   const reopened = new Engine(config({},false),store,{}); assert.equal(reopened.position().lots.length,2);
   assert.equal(reopened.cfg.tradePercentBps,1000); assert.equal(reopened.active(),false);
 });
-test('old TP SL and trailing levels cannot close buys; manual close still exits every lot', async t=>{
-  const {engine,cfg,store,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
-  price(1100000000); await engine.trade({side:'buy',reason:'second'});
-  const before=engine.position(); before.lots[0].slHigh='999999999999'; store.set(engine.key('position'),before);
-  cfg.stopLoss=200; cfg.takeProfit=300;
-  for (const value of [100000000,1200000000,5000000000]) {
-    store.set(engine.key('samples'),[]); price(value); await engine.tick();
-    assert.deepEqual(engine.position(),before); assert.equal(engine.orders().length,2);
-  }
-  engine.requestClose(); await engine.tick(); assert.equal(engine.position(),null); assert.equal(engine.active(),false);
+test('TP and SL close the full weighted-average position before warm-up', async t=>{
+  const first=fixture(t); first.engine.start(); await first.engine.trade({side:'buy',reason:'first'});
+  first.price(1030000000); await first.engine.tick();
+  assert.equal(first.engine.position(),null); assert.equal(first.engine.orders()[0].reason,'Take profit');
+
+  const second=fixture(t); second.engine.start(); await second.engine.trade({side:'buy',reason:'first'});
+  second.price(980000000); await second.engine.tick();
+  assert.equal(second.engine.position(),null); assert.equal(second.engine.orders()[0].reason,'Stop loss');
 });
 
 test('partial fills allocate cost without loss and reject over-selling atomically', async t=>{
@@ -71,7 +69,7 @@ test('buy signals can add to holdings and live Available to Trade excludes gas r
   const server=appServer(engine,{demo:true}); await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>new Promise(r=>server.close(r)));
   const balance=await (await fetch(`http://127.0.0.1:${server.address().port}/api/balance`)).json(); assert.equal(balance.availableToTrade,'1000000000');
 });
-test('snapshot retains per-buy cost and amounts but omits exit levels', async t=>{
+test('snapshot retains per-buy cost and amounts with strategy exit settings', async t=>{
   const {engine,price}=fixture(t); engine.start(); await engine.trade({side:'buy',reason:'first'});
   price(2000000000); await engine.trade({side:'buy',reason:'second'});
   const state=snapshot(engine); assert.equal(state.positions.length,2);
@@ -79,6 +77,7 @@ test('snapshot retains per-buy cost and amounts but omits exit levels', async t=
     assert.ok(lot.amount && lot.cost);
     for (const key of ['takeProfitPrice','stopPrice','slTrailing']) assert.equal(Object.hasOwn(lot,key),false);
   }
+  assert.equal(state.strategy.takeProfit,2.5); assert.equal(state.strategy.stopLoss,1.5);
 });
 
 test('sell allocations retain exact buy identity, cost and proceeds through partial sells and restart', async t => {

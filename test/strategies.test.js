@@ -30,12 +30,12 @@ test('alternative strategies generate distinct entries and exits, not repeated o
   assert.equal(alternativeSignal([10,10,5,8], {}, bbCfg).side, 'sell');
   assert.equal(alternativeSignal([10,10,5,1], null, bbCfg), null);
 });
-test('all strategies wait for warm-up and ignore old exit thresholds', () => {
+test('all strategies wait for warm-up while TP and SL protect positions immediately', () => {
   for (const type of ['ema','sma','rsi','bollinger']) {
     const cfg = cfgFor({type}), position = {amount:'100000000',cost:'100000000000'};
     assert.equal(signal([{price:'100000000000'}], null, cfg), null);
-    assert.equal(signal([{price:'97000000000'}], position, cfg), null);
-    assert.equal(signal([{price:'103000000000'}], position, cfg), null);
+    assert.equal(signal([{price:'97000000000'}], position, cfg).reason, 'Stop loss');
+    assert.equal(signal([{price:'103000000000'}], position, cfg).reason, 'Take profit');
     assert.ok(warmup(cfg) >= 3);
   }
 });
@@ -80,6 +80,7 @@ test('new strategies use slower SMA defaults while saved strategies remain uncha
   const engine=new Engine(cfg,store,{}), s=snapshot(engine);
   assert.equal(s.strategy.type,'sma'); assert.equal(s.strategy.fast,5); assert.equal(s.strategy.slow,12);
   assert.equal(s.strategy.interval,30); assert.equal(s.strategy.sizePercent,10);
+  assert.equal(s.strategy.takeProfit,2.5); assert.equal(s.strategy.stopLoss,1.5);
   assert.equal(s.strategy.maxTrade,'0.1'); assert.equal(s.strategy.maxDaily,undefined); assert.equal(s.strategy.slippage,0.5);
   engine.configure({...s.strategy,type:'rsi',interval:120,sizePercent:7});
   const reopened=new Engine(config({},false),store,{});
@@ -92,8 +93,9 @@ test('warm-up is always ten and long-period indicators use available samples wit
     const cfg=cfgFor({type,fast:2,slow:period,rsiPeriod:period,bbPeriod:period});
     assert.equal(warmup(cfg),10);
     const samples=[...Array(9).fill(100),90].map(price=>({price:String(price)}));
-    assert.equal(signal(samples.slice(0,9),{amount:'1',cost:'100'},cfg),null);
-    if (type==='ema'||type==='sma') assert.equal(signal(samples,{amount:'1',cost:'100'},cfg).side,'sell');
+    const position={amount:'100000000',cost:'100'};
+    assert.equal(signal(samples.slice(0,9),position,cfg),null);
+    if (type==='ema'||type==='sma') assert.equal(signal(samples,position,cfg).side,'sell');
     assert.ok(Number.isFinite(rsi(samples.map(s=>Number(s.price)),period)));
     assert.ok(Number.isFinite(bands(samples.map(s=>Number(s.price)),period,2).lower));
   }
@@ -121,11 +123,12 @@ test('slow paper preset upgrades once without changing size or limits; live pres
 test('sells require a fresh exit crossing instead of repeating throughout a regime', () => {
   for (const type of ['ema','sma']) {
     const cfg=cfgFor({type,fast:2,slow:3});
+    cfg.stopLoss=9000; cfg.takeProfit=50000;
     const prices=[...Array(20).fill(100),120,...Array(20).fill(60),...Array(20).fill(120),...Array(20).fill(60)];
     const samples=[]; let sells=0;
     for (const price of prices) {
       samples.push({price:String(price)});
-      if (signal(samples, {amount:'1000',cost:'1000'}, cfg)?.side==='sell') sells++;
+      if (signal(samples, {amount:'100000000',cost:'100'}, cfg)?.side==='sell') sells++;
     }
     assert.equal(sells,2, type);
   }

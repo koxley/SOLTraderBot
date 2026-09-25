@@ -5,6 +5,14 @@ const marketFields = document.createElement('div');
 marketFields.className = 'settings-grid';
 marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label>';
 $('strategy-fields').prepend(marketFields);
+const riskSettings = document.createElement('section');
+riskSettings.className = 'risk-settings';
+riskSettings.innerHTML = '<div><p class="eyebrow">POSITION EXITS</p><h3>Take profit &amp; stop loss</h3><p>Measured from the weighted-average entry. Save while running to update the graph and active thresholds immediately.</p></div><div class="risk-settings-grid"></div>';
+const riskGrid = riskSettings.querySelector('.risk-settings-grid');
+for (const [id, help] of [['setting-takeProfit', 'Closes the full position above entry.'], ['setting-stopLoss', 'Closes the full position below entry.']]) {
+  const label = $(id).closest('label'), small = document.createElement('small'); small.textContent = help; label.append(small); riskGrid.append(label);
+}
+$('strategy-fields').insertBefore(riskSettings, $('strategy-fields').querySelector('.settings-grid'));
 let state = null, activeView = 'dashboard', toastTimer, actionBusy = false;
 let settingsDirty = false, savingSettings = false;
 let assetDirty = false, savingAsset = false;
@@ -105,6 +113,8 @@ function render(s) {
   text('strategy-name', strategyNames[s.strategy.type || 'ema']);
   text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 5);
   text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.sizePercent + '%');
+  text('take-profit', tracking ? '—' : s.strategy.takeProfit + '%');
+  text('stop-loss', tracking ? '—' : s.strategy.stopLoss + '%');
   text('strategy-summary-help', tracking ? 'Signals update the tracker only. They are not orders or trading recommendations.' : 'Exits are checked at each sample while running. They are not exchange-held orders or guaranteed prices.');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('slippage', s.strategy.slippage + '%');
   text('mint-label', market.asset + ' mint: ' + s.assetMint);
@@ -176,7 +186,22 @@ function drawChart(samples) {
   const trades = state?.chartTrades || state?.trades || [];
   const tracking = state?.market && !state.market.executable;
   const reference = state?.market?.reference || state?.quote || 'SOL';
-  text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : 'Observed prices');
+  const previewLevels = !state?.position;
+  const entry = previewLevels ? Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price) : Number(state.position.cost) / Number(state.position.amount);
+  const levels = !tracking && Number.isFinite(entry) && entry > 0 ? [
+    { name: 'TP', percent: state.strategy.takeProfit, sign: '+', price: entry * (1 + state.strategy.takeProfit / 100), color: '#b6f36b', offset: -12 },
+    { name: 'SL', percent: state.strategy.stopLoss, sign: '−', price: entry * (1 - state.strategy.stopLoss / 100), color: '#f09391', offset: 12 }
+  ] : [];
+  const levelText = levels.map(level => `${level.name} ${level.sign}${level.percent}% at ${Number(level.price.toPrecision(8))} ${reference}`).join(' · ');
+  text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : 'Open position · weighted-average entry. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
+  const current = Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price);
+  $('chart-risk-details').hidden = !levels.length;
+  if (levels.length) {
+    const tpGap = (levels[0].price - current) / current * 100, slGap = (current - levels[1].price) / current * 100;
+    text('chart-entry-detail', `${previewLevels ? 'Latest quote preview' : 'Weighted-average entry'} · ${number(entry, 9)} ${reference}`);
+    text('chart-tp-detail', `+${levels[0].percent}% · ${number(levels[0].price, 9)} ${reference} · ${tpGap > 0 ? number(tpGap, 2) + '% remaining' : 'reached by ' + number(Math.abs(tpGap), 2) + '%'}`);
+    text('chart-sl-detail', `−${levels[1].percent}% · ${number(levels[1].price, 9)} ${reference} · ${slGap > 0 ? number(slGap, 2) + '% buffer' : 'reached by ' + number(Math.abs(slGap), 2) + '%'}`);
+  }
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
@@ -184,9 +209,9 @@ function drawChart(samples) {
   const w = rect.width, h = rect.height;
   ctx.strokeStyle = '#25302f'; ctx.lineWidth = .6; ctx.setLineDash([3, 5]);
   for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
-  ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1;
-  if (samples.length < 2) { canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. Waiting for price samples; no open position.`); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
-  const values = samples.map(s => s.price);
+  ctx.setLineDash([]); $('chart-empty').hidden = samples.length > 1 || levels.length > 0;
+  if (samples.length < 2 && !levels.length) { canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. Waiting for price samples; no open position.`); text('chart-first', '—'); text('chart-last', '—'); text('chart-empty', samples.length ? 'Collecting samples for your price history.' : 'Your price history starts when the bot runs.'); return; }
+  const values = samples.length > 1 ? samples.map(s => s.price) : [...samples.map(s => s.price), ...levels.map(level => level.price)];
   const low = Math.min(...values), high = Math.max(...values);
   const padding = Math.max((high - low) * .15, Math.abs(high) * .000001, Number.EPSILON);
   const min = low - padding, max = high + padding, range = max - min;
@@ -213,7 +238,18 @@ function drawChart(samples) {
     ctx.fillStyle = trade.side === 'buy' ? '#b6f36b' : '#f09391'; ctx.fill();
     ctx.strokeStyle = '#0b0e14'; ctx.lineWidth = 1.5; ctx.stroke();
   }
-  canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. ${tracking ? 'Tracking only; no trades are submitted.' : `${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. Details in Transactions.`}`);
+  for (const level of levels) {
+    const outside = level.price > max ? ' ↑ above range' : level.price < min ? ' ↓ below range' : '';
+    const y = Math.max(28, Math.min(h - 28, h - 28 - (level.price - min) / range * (h - 56)));
+    ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.moveTo(outside ? w - 80 : 12, y); ctx.lineTo(w - 12, y);
+    ctx.strokeStyle = level.color; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
+    const label = `${level.name} ${level.sign}${level.percent}%${previewLevels ? ' preview' : ''} ${Number(level.price.toPrecision(8))} ${reference}${outside}`;
+    ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillStyle = '#12171f'; ctx.fillRect(w - 18 - labelWidth - 4, y + level.offset - 8, labelWidth + 8, 16);
+    ctx.fillStyle = level.color; ctx.fillText(label, w - 18, y + level.offset);
+  }
+  canvas.setAttribute('aria-label', `Observed ${state?.market?.asset || state?.base || 'asset'} price in ${reference}. ${tracking ? 'Tracking only; no trades are submitted.' : `${completed.filter(t => t.side === 'buy').length} completed buys marked with green upward triangles; ${completed.filter(t => t.side === 'sell').length} completed sells marked with red downward triangles. ${levelText ? (previewLevels ? 'Preview levels, no open position: ' : 'Position levels: ') + levelText + '. ' : ''}Details in Transactions.`}`);
   const time = n => new Date(n).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); text('chart-first', samples.length ? time(samples[0].time) : '—'); text('chart-last', samples.length ? time(samples.at(-1).time) : '—');
 }
 function renderPrice() {
