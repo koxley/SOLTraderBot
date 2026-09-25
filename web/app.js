@@ -84,7 +84,7 @@ function render(s) {
   text('realized-note', tracking ? 'No swaps submitted' : 'SOL · before network fees');
   $('realized').className = s.realized > 0 ? 'green' : s.realized < 0 ? 'red' : '';
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
-  text('status-pill', s.closing ? 'Closing' : s.running ? 'Running' : 'Stopped');
+  text('status-pill', s.closing ? 'Closing' : s.running ? (s.warmup < s.warmupRequired ? 'Warming Up' : 'Running') : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
   text('status-detail', tracking ? (s.running ? `Monitoring ${market.asset}. Tracking mode never submits swaps.` : `Start monitoring ${market.asset}. Tracking mode never submits swaps.`) : s.pending ? 'A trade needs reconciliation. New trades are blocked.' : s.closing ? `Selling the bot’s ${s.base} position back to SOL. Trading will stay stopped.` : s.running ? s.warmup < s.warmupRequired ? 'Collecting price samples before the first entry signal.' : 'Watching for the selected strategy signals. Buys and sells happen automatically.' : 'Start the bot to monitor the market and trade automatically.');
   text('status-help', tracking ? 'Stop pauses price monitoring. It never opens or closes a position.' : 'Stop pauses all trading and keeps your position open.');
