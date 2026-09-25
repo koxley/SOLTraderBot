@@ -49,6 +49,20 @@ function updateStrategyFields() {
 $('setting-type').addEventListener('change', updateStrategyFields);
 const number = (v, max = 6) => Number(v).toLocaleString('en-US', { maximumFractionDigits: max });
 const text = (id, value) => { $(id).textContent = value; };
+function renderMarketHeader(market, preview = false) {
+  const tracking = !market.executable;
+  text('market-pair', `${market.reference} / ${market.asset}`);
+  text('market-name', preview ? `Selection preview · save to load the ${market.asset} chart` : tracking ? `Single coin tracking · ${market.reference} reference` : `${market.asset} · Solana`);
+  text('market-tag', tracking ? 'TRACK ONLY' : 'SPOT');
+  text('asset-icon', market.asset === 'cbBTC' ? '₿' : market.asset === 'ETH' ? 'Ξ' : market.asset.slice(0, 1));
+}
+function previewTrackedCoin() {
+  if (!state) return;
+  const asset = $('setting-asset').value;
+  if (!asset) return renderMarketHeader(state.market);
+  const executable = $('setting-marketType').value !== 'track';
+  renderMarketHeader({ asset, reference: state.market?.reference || state.quote || 'SOL', executable }, asset !== state.market?.asset || executable !== state.market?.executable);
+}
 function toast(message) { text('toast', message); $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 6000); }
 async function api(path, method = 'GET', body) {
   const response = await fetch('/api/' + path, { method, headers: { Authorization: `tma ${tg?.initData || ''}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(path === 'asset' ? 60000 : 20000) });
@@ -60,10 +74,7 @@ function render(s) {
   if (state?.marketKey !== s.marketKey) { livePrice = null; recentSince = Date.now(); settingsDirty = false; }
   state = s;
   const market = s.market || { asset: s.base, reference: s.quote, executable: true }, tracking = !market.executable;
-  text('market-pair', tracking ? market.asset : `${market.reference} / ${market.asset}`);
-  text('market-name', tracking ? `Single coin tracking · ${market.reference} reference` : `${market.asset} · Solana`);
-  text('market-tag', tracking ? 'TRACK ONLY' : 'SPOT');
-  text('asset-icon', market.asset === 'cbBTC' ? '₿' : market.asset === 'ETH' ? 'Ξ' : market.asset.slice(0, 1));
+  renderMarketHeader(market);
   text('price-label', `${market.asset} price in ${market.reference}`);
   text('position-symbol', market.asset);
   text('position-heading', tracking ? 'Tracker signal' : 'Open buys');
@@ -122,6 +133,7 @@ function render(s) {
   text('dashboard-trade-count', s.mode.toUpperCase());
   text('trade-history-note', `Showing latest ${s.trades.length} of ${s.tradeCount ?? s.trades.length} ${s.mode} transactions. Updates every 3 seconds. ${s.demo ? 'Preview history resets when the demo restarts.' : 'History is saved on the bot server.'}`);
   if (!settingsDirty && !savingSettings) fillSettings(s.strategy);
+  else previewTrackedCoin();
   const locked = s.running || s.busy || s.closing || !!s.pending;
   $('edit-balance').hidden = tracking || s.mode !== 'paper';
   if (s.mode !== 'paper') $('balance-form').hidden = true;
@@ -198,7 +210,6 @@ function drawChart(samples) {
   $('chart-risk-details').hidden = !levels.length;
   if (levels.length) {
     const tpGap = (levels[0].price - current) / current * 100, slGap = (current - levels[1].price) / current * 100;
-    text('chart-entry-detail', `${previewLevels ? 'Latest quote preview' : 'Weighted-average entry'} · ${number(entry, 9)} ${reference}`);
     text('chart-tp-detail', `+${levels[0].percent}% · ${number(levels[0].price, 9)} ${reference} · ${tpGap > 0 ? number(tpGap, 2) + '% remaining' : 'reached by ' + number(Math.abs(tpGap), 2) + '%'}`);
     text('chart-sl-detail', `−${levels[1].percent}% · ${number(levels[1].price, 9)} ${reference} · ${slGap > 0 ? number(slGap, 2) + '% buffer' : 'reached by ' + number(Math.abs(slGap), 2) + '%'}`);
   }
@@ -352,8 +363,11 @@ document.querySelectorAll('[data-view]').forEach(button => button.addEventListen
   window.scrollTo({ top: 0 });
 }));
 window.addEventListener('resize', () => state && drawChart(state.samples));
-$('strategy-form').addEventListener('input', () => { settingsDirty = true; text('settings-status', 'Unsaved changes'); });
-$('reset-strategy').addEventListener('click', () => { if (state) fillSettings(state.strategy); settingsDirty = false; $('settings-error').hidden = true; text('settings-status', 'Edits discarded.'); });
+$('strategy-form').addEventListener('input', event => {
+  settingsDirty = true; text('settings-status', 'Unsaved changes');
+  if (['setting-asset', 'setting-marketType'].includes(event.target.id)) previewTrackedCoin();
+});
+$('reset-strategy').addEventListener('click', () => { if (state) { fillSettings(state.strategy); renderMarketHeader(state.market); } settingsDirty = false; $('settings-error').hidden = true; text('settings-status', 'Edits discarded.'); });
 $('strategy-form').addEventListener('submit', async event => {
   event.preventDefault(); if (savingSettings) return;
   const settings = Object.fromEntries(new FormData(event.currentTarget));
