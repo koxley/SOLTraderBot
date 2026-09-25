@@ -362,3 +362,9 @@ $('asset-form').addEventListener('submit', async event => {
   } catch (error) { text('asset-error', error.message); $('asset-error').hidden = false; text('asset-status', 'Refresh to check the current asset before retrying.'); }
   finally { savingAsset = false; actionBusy = false; await refresh(); await balances(); await refreshPrice(); }
 });
+
+$('load-defaults').addEventListener('click', () => {
+  if (!state || savingSettings) return;
+  fillSettings(state.defaultStrategy); settingsDirty = true;
+  text('settings-status', 'Defaults loaded. Press Save strategy to apply.');
+});
