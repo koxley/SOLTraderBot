@@ -1,6 +1,6 @@
 # Selectable strategies
 
-Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 5/12 with 30-second samples, 10% sizing, 0.1 SOL maximum entry, 0.5 SOL daily gross entry limit, and 0.5% slippage. Existing saved settings remain unchanged. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
+Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 5/12 with 30-second samples, 10% sizing, 0.1 SOL maximum entry, 0.5% slippage. Existing saved settings remain unchanged. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
 
 | Strategy | Entry | Strategy exit | Defaults |
 |---|---|---|---|
@@ -23,7 +23,7 @@ Indicator references: [Fidelity RSI](https://www.fidelity.com/learning-center/tr
 
 ## Independent buys and sells
 
-Trade Size is now a percentage from 0.01% to 100% (two decimal places). A buy spends that fraction of currently available SOL. In live mode the Available to Trade display excludes MIN_SOL_RESERVE plus MAX_NETWORK_FEE_SOL; Wallet still shows the actual balance. A percentage exceeding maximum entry or remaining daily limits is rejected by the existing limits; it is not silently resized.
+Trade Size is now a percentage from 0.01% to 100% (two decimal places). A buy spends that fraction of currently available SOL. In live mode the Available to Trade display excludes MIN_SOL_RESERVE plus MAX_NETWORK_FEE_SOL; Wallet still shows the actual balance. A percentage exceeding the maximum entry limit is rejected by the existing limits; it is not silently resized.
 
 A buy signal can add another buy even while holdings are open. Ordinary sell signals sell the configured percentage of remaining bot-held tokens; consecutive sells are permitted. Ordinary sells consume oldest buy lots first and realize only the cost basis of tokens sold. Deposited tokens outside the bot's tracked buys are not automatically sold. There is no borrowing or short selling. Zero-sized orders after rounding are skipped.
 
@@ -40,8 +40,10 @@ Completed sells persist allocations to their original buy IDs, including sold qu
 
 ## Stop resets the displayed session
 
-Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart reloads up to 15 minutes of separately cached observed prices on Open or Start, then continues collecting. Stop still clears the visible chart immediately. Cached chart prices never count toward strategy warm-up, and unavailable history is not fabricated. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and daily spending limits. If an operation is in flight, the cash reset waits for settlement.
+Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart reloads up to 15 minutes of separately cached observed prices on Open or Start, then continues collecting. Stop still clears the visible chart immediately. Cached chart prices never count toward strategy warm-up, and unavailable history is not fabricated. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and accounting. If an operation is in flight, the cash reset waits for settlement.
 
 ## Responsive paper preset upgrade
 
-The saved SMA 10/30, 60-second paper preset is upgraded once to SMA 5/12, 30 seconds. Its trade percentage and per-entry limit are preserved. A 0.5 SOL daily allowance is raised to 1 SOL for this paper preset. Live settings and other strategies are unchanged. The daily entry limit counts buys only; sells do not consume it. No trade is forced: entries still require a fresh crossover and ten warm-up samples.
+The saved SMA 10/30, 60-second paper preset is upgraded once to SMA 5/12, 30 seconds. Its trade percentage and per-entry limit are preserved. Live settings and other strategies are unchanged. No trade is forced: entries still require a fresh crossover and ten warm-up samples.
+
+Daily gross trading limits have been removed. Legacy saved maxDaily settings and MAX_DAILY environment values are ignored. Per-trade limits, available balance, slippage validation and unsettled-order safeguards remain.
