@@ -109,9 +109,11 @@ export function config(env = process.env, requireTelegram = true) {
   };
   const rpc = env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
   if (!['http:', 'https:'].includes(new URL(rpc).protocol)) throw new Error('Invalid RPC URL.');
-  const fast = integer('EMA_FAST', 5, 2, 100);
-  const slow = integer('EMA_SLOW', 12, 3, 200);
+  const fast = integer('EMA_FAST', 10, 2, 100);
+  const slow = integer('EMA_SLOW', 30, 3, 200);
   if (fast >= slow) throw new Error('EMA_FAST must be less than EMA_SLOW.');
+  const strategyType = env.STRATEGY_TYPE || 'sma';
+  if (!['ema', 'sma', 'rsi', 'bollinger'].includes(strategyType)) throw new Error('Unsupported STRATEGY_TYPE.');
   const dogeDecimals = integer('DOGE_DECIMALS', 8, 0, 12);
   const dogeMint = env.DOGE_MINT || TOKENS.DOGE.mint;
   if (dogeMint && (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(dogeMint) || dogeMint === TOKENS.SOL.mint))
@@ -130,8 +132,8 @@ export function config(env = process.env, requireTelegram = true) {
     maxTrade: amount(inverse ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL', inverse ? '1' : '0.1', quoteDecimals), maxDaily: amount(inverse ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL', inverse ? '5' : '0.5', quoteDecimals),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),
     paper: { cbBTC: units(env.PAPER_CBBTC ?? '0', 8).toString(), USDC: units(env.PAPER_USDC ?? (inverse ? '1' : '0'), 6).toString(), DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
-    tradeSize: amount(inverse ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL', inverse ? '0.25' : '0.025', quoteDecimals),
-    sampleMs: integer('SAMPLE_SECONDS', 15, 15, 3600) * 1000,
-    fast, slow,
+    tradeSize: amount(inverse ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL', inverse ? '0.25' : '0.1', quoteDecimals),
+    sampleMs: integer('SAMPLE_SECONDS', 60, 15, 3600) * 1000,
+    fast, slow, strategyType,
   };
 }

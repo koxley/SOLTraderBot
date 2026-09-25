@@ -6,7 +6,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { UserError, format } from './config.js';
-import { strategySettings } from './strategy.js';
+import { strategySettings, recommendedDefaults } from './strategy.js';
 import { validateQuote } from './engine.js';
 import { ASSETS, resolveAsset } from './assets.js';
 
@@ -73,7 +73,7 @@ export function snapshot(engine) {
     positions: lotsOf(p).map((lot, index) => ({ id: lot.id, label: `Buy ${index + 1}`, opened: lot.opened,
       amount: format(lot.amount, cfg.tokens[cfg.base].decimals), cost: format(lot.cost, cfg.quoteDecimals) })),
     realized: Number(realized) / 10 ** cfg.quoteDecimals,
-    strategy: strategySettings(cfg),
+    strategy: strategySettings(cfg), defaultStrategy: recommendedDefaults(cfg),
     chartTrades: visibleOrders.filter(o => o.status === 'filled' && chartSamples.length && o.time >= chartSamples[0].time)
       .map(o => ({ time: o.time, side: o.side, status: o.status })),
     paperStartingBalance: format(engine.store.get(engine.key('startingBalance')) ?? (10n ** BigInt(cfg.quoteDecimals)).toString(), cfg.quoteDecimals),

@@ -6,7 +6,7 @@ import { ASSETS } from './assets.js';
 import { UserError } from './config.js';
 
 // Isolated in-memory preview. No Telegram credentials, wallet keys or external requests.
-const cfg = config({ SAMPLE_SECONDS: '15' }, false);
+const cfg = config({}, false);
 let step = 0;
 const market = {
   async quote(input, output, amount) {

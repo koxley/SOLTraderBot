@@ -46,3 +46,10 @@ export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
       slippage: cfg.slippage, maxTrade: cfg.maxTrade, maxDaily: cfg.maxDaily };
   } catch (error) { throw new UserError(error.message); }
 }
+
+// Default button values are independent of saved settings and old deployment overrides.
+export function recommendedDefaults(cfg) {
+  return { ...strategySettings(cfg), type: 'sma', fast: 10, slow: 30, interval: 60,
+    sizePercent: 10, maxTrade: cfg.quote === 'SOL' ? '0.1' : '1',
+    maxDaily: cfg.quote === 'SOL' ? '0.5' : '5', slippage: 0.5 };
+}
