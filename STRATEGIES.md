@@ -4,10 +4,10 @@ Open Strategy, select a strategy, configure its fields and press Save strategy. 
 
 | Strategy | Entry | Strategy exit | Defaults |
 |---|---|---|---|
-| EMA crossover | Fast EMA crosses above slow EMA | Fast EMA below slow EMA | 5 / 12 samples |
-| SMA crossover | Fast SMA crosses above slow SMA | Fast SMA below slow SMA | 5 / 12 samples |
-| RSI recovery | Wilder RSI crosses above entry threshold from at or below it | RSI at or above exit threshold | 14 samples; 30 / 70 |
-| Bollinger band recovery | Price returns to or above lower band after being below it | Price at or above middle SMA | 20 samples; 2 population standard deviations |
+| EMA crossover | Fast EMA crosses above slow EMA | Fast EMA crosses below slow EMA | 5 / 12 samples |
+| SMA crossover | Fast SMA crosses above slow SMA | Fast SMA crosses below slow SMA | 5 / 12 samples |
+| RSI recovery | Wilder RSI crosses above entry threshold from at or below it | RSI crosses up through exit threshold | 14 samples; 30 / 70 |
+| Bollinger band recovery | Price returns to or above lower band after being below it | Price crosses up through middle SMA | 20 samples; 2 population standard deviations |
 
 These are long-only signals: buys spend SOL on the selected token; sells close the bot position back to SOL. TP, SL, and trailing stops are no longer used. Periods are sample counts: at the default 30-second interval, 20 samples span approximately ten minutes. These defaults are not performance guarantees.
 
@@ -25,7 +25,7 @@ Indicator references: [Fidelity RSI](https://www.fidelity.com/learning-center/tr
 
 Trade Size is now a percentage from 0.01% to 100% (two decimal places). A buy spends that fraction of currently available SOL. In live mode the Available to Trade display excludes MIN_SOL_RESERVE plus MAX_NETWORK_FEE_SOL; Wallet still shows the actual balance. A percentage exceeding the maximum entry limit is rejected by the existing limits; it is not silently resized.
 
-A buy signal can add another buy even while holdings are open. Ordinary sell signals sell the configured percentage of remaining bot-held tokens; consecutive sells are permitted. Ordinary sells consume oldest buy lots first and realize only the cost basis of tokens sold. Deposited tokens outside the bot's tracked buys are not automatically sold. There is no borrowing or short selling. Zero-sized orders after rounding are skipped.
+A buy signal can add another buy even while holdings are open. Ordinary sell signals sell the configured percentage of remaining bot-held tokens; each requires a fresh exit crossing. Remaining below a moving average or above an RSI/band exit threshold no longer repeatedly sells on every sample. A new crossing can trigger another sell without an intervening buy. Ordinary sells consume oldest buy lots first and realize only the cost basis of tokens sold. Deposited tokens outside the bot's tracked buys are not automatically sold. There is no borrowing or short selling. Zero-sized orders after rounding are skipped.
 
 Each buy retains its own entry cost. Close Open Positions sells all bot-held tokens. Restart, partial sells and trade reconciliation retain remaining buy lots and their cost basis.
 
