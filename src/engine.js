@@ -39,7 +39,8 @@ export function signal(samples, position, cfg) {
   const previous = prices.slice(0, -1);
   if (ema(previous, cfg.fast) <= ema(previous, cfg.slow) && fast > slow)
     return { side: 'buy', reason: 'EMA crossed up' };
-  if (position && fast < slow) return { side: 'sell', reason: 'EMA below slow' };
+  if (position && ema(previous, cfg.fast) >= ema(previous, cfg.slow) && fast < slow)
+    return { side: 'sell', reason: 'EMA crossed down' };
   return null;
 }
 
