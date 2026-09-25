@@ -102,7 +102,7 @@ function render(s) {
   text('position-tag', tracking ? 'NO TRADES' : s.position ? `${s.positions?.length || 1} OPEN BUY${s.positions?.length === 1 ? '' : 'S'}` : 'NO POSITION');
   if (s.position) { text('position-amount', number(s.position.amount, 8)); text('position-cost', number(s.position.cost, 6) + ' SOL'); text('position-value', s.position.value === null ? '—' : number(s.position.value, 6) + ' SOL'); }
   text('strategy-name', strategyNames[s.strategy.type || 'ema']);
-  text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
+  text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 5);
   text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.sizePercent + '%');
   text('strategy-summary-help', tracking ? 'Signals update the tracker only. They are not orders or trading recommendations.' : 'Exits are checked at each sample while running. They are not exchange-held orders or guaranteed prices.');
   text('max-trade', s.strategy.maxTrade + ' SOL'); text('slippage', s.strategy.slippage + '%');
@@ -171,7 +171,7 @@ function renderTrades(trades, target) {
 }
 function drawChart(samples) {
   const latestTime = samples.at(-1)?.time;
-  samples = samples.filter(sample => sample.time >= latestTime - 15 * 60 * 1000).slice(-60);
+  samples = samples.filter(sample => sample.time >= latestTime - 15 * 60 * 1000).slice(-180);
   const trades = state?.chartTrades || state?.trades || [];
   const tracking = state?.market && !state.market.executable;
   const reference = state?.market?.reference || state?.quote || 'SOL';
@@ -223,7 +223,7 @@ function renderPrice() {
 async function refreshPrice() {
   if (priceBusy) return;
   priceBusy = true;
-  try { const quote = await api('price'); if (!savingAsset && (!state?.marketKey || quote.marketKey === state.marketKey)) livePrice = quote; priceFailed = false; }
+  try { const quote = await api('price'); if (!savingAsset && (!state?.marketKey || quote.marketKey === state.marketKey)) livePrice = quote; priceFailed = false; await refresh(); }
   catch { priceFailed = true; }
   finally { priceBusy = false; renderPrice(); }
 }
