@@ -15,7 +15,7 @@ These are long-only signals: buys spend SOL on the selected token; sells close t
 
 Saving keeps the current running/stopped state. A save waits up to 15 seconds for an in-flight operation to finish; if still busy or an outcome is unknown, it fails without changing settings and can be retried after settlement. Submitted trades finish using their original settings. Switching asset or paper/live mode still requires stopping and satisfying existing position safeguards.
 
-Changing signal parameters or the sample interval clears indicator history. Warm-up requires slow period + 1 samples for moving averages, RSI period + 2 for RSI, and band period + 1 for Bollinger. Existing holdings remain intact. No automatic sells occur before warm-up completes. Saving does not place a trade immediately.
+Changing signal parameters or the sample interval clears indicator history. Warm-up is fixed at 10 samples for all strategies and tracking modes, regardless of configured periods or interval. Until a full indicator window exists, calculations use the available samples; they converge to the configured window as history builds. Warm-up completion enables evaluation but does not guarantee a trade signal. Existing holdings remain intact. No automatic sells occur before warm-up completes. Saving does not place a trade immediately.
 
 Settings persist separately per asset and paper/live mode. A server restart still leaves trading stopped. Quotes and chart display continue at their existing 5-second and 15-second cadences.
 
