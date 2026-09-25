@@ -5,6 +5,18 @@ import vm from 'node:vm';
 
 const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
 const functions = app.slice(app.indexOf('function renderMarketHeader('), app.indexOf('function toast('));
+const trackedCoinLock = app.slice(app.indexOf('function updateTrackedCoinLock('), app.indexOf("$('setting-type').addEventListener"));
+
+test('Tracked Coin is locked only while the bot is running', () => {
+  const field = {};
+  const sandbox = { $: () => field };
+  vm.createContext(sandbox);
+  vm.runInContext(trackedCoinLock, sandbox);
+  sandbox.updateTrackedCoinLock({ running: true });
+  assert.equal(field.disabled, true);
+  sandbox.updateTrackedCoinLock({ running: false });
+  assert.equal(field.disabled, false);
+});
 
 test('changing Tracked Coin immediately previews the selected SOL pair', () => {
   const labels = {};

@@ -46,6 +46,9 @@ function updateStrategyFields() {
     bollinger: 'Buy when price returns inside the lower band after a sample below it. Sell once when price crosses up through the middle simple moving average. Defaults: 20 samples and 2 standard deviations.'
   }[type]);
 }
+function updateTrackedCoinLock(s) {
+  $('setting-asset').disabled = s.running;
+}
 $('setting-type').addEventListener('change', updateStrategyFields);
 const number = (v, max = 6) => Number(v).toLocaleString('en-US', { maximumFractionDigits: max });
 const text = (id, value) => { $(id).textContent = value; };
@@ -144,6 +147,7 @@ function render(s) {
   else text('available-note', s.mode === 'paper' ? 'SOL · resets to 1 on open/start/stop' : 'SOL · available after gas reserve and fee buffer');
   const strategyLocked = s.closing || !!s.pending;
   $('strategy-fields').disabled = strategyLocked || savingSettings;
+  updateTrackedCoinLock(s);
   $('save-strategy').disabled = strategyLocked || savingSettings;
   $('reset-strategy').disabled = savingSettings;
   $('settings-lock').hidden = !strategyLocked;
