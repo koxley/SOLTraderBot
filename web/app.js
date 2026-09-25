@@ -11,6 +11,7 @@ let assetDirty = false, savingAsset = false;
 let recentSince = Date.now();
 let savingBalance = false;
 let availableSOL = null;
+let stateRevision = 0;
 let returnRate = null, returnRateAt = 0, returnRateBusy = false;
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
@@ -228,7 +229,8 @@ async function refreshPrice() {
   finally { priceBusy = false; renderPrice(); }
 }
 async function refresh() {
-  try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
+  const revision = stateRevision;
+  try { const next = await api('state'); if (revision === stateRevision && !actionBusy) render(next); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
 }
 async function balances() {
   if (state?.market && !state.market.executable) return;
@@ -259,9 +261,11 @@ async function wallet() {
   } catch (error) { toast(error.message); }
 }
 async function action(name) {
-  if (actionBusy) return; actionBusy = true; if (state) render(state);
+  if (actionBusy) return; actionBusy = true; stateRevision++; if (state) render(state);
   try {
     const response = await api(name, 'POST');
+    stateRevision++;
+    if (name === 'stop') render({ ...response, demo: state?.demo });
     if (name === 'start' || name === 'stop') { recentSince = Date.now(); livePrice = null; }
     tg?.HapticFeedback?.notificationOccurred('success');
     toast(response.message || ({ start: 'Autopilot started.', stop: 'Bot stopped. Your position is kept.', close: 'Closing requested. The bot will remain stopped.', 'wallet/create': 'Wallet created. You can now deposit SOL.' })[name] || 'Done.');
