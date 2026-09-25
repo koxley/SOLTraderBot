@@ -78,13 +78,13 @@ test('unsettled transactions and closing still block strategy changes without pa
 test('new strategies use slower SMA defaults while saved strategies remain unchanged', t => {
   const cfg=config({},false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
   const engine=new Engine(cfg,store,{}), s=snapshot(engine);
-  assert.equal(s.strategy.type,'sma'); assert.equal(s.strategy.fast,10); assert.equal(s.strategy.slow,30);
-  assert.equal(s.strategy.interval,60); assert.equal(s.strategy.sizePercent,10);
+  assert.equal(s.strategy.type,'sma'); assert.equal(s.strategy.fast,5); assert.equal(s.strategy.slow,12);
+  assert.equal(s.strategy.interval,30); assert.equal(s.strategy.sizePercent,10);
   assert.equal(s.strategy.maxTrade,'0.1'); assert.equal(s.strategy.maxDaily,'0.5'); assert.equal(s.strategy.slippage,0.5);
   engine.configure({...s.strategy,type:'rsi',interval:120,sizePercent:7});
   const reopened=new Engine(config({},false),store,{});
   assert.equal(snapshot(reopened).strategy.type,'rsi'); assert.equal(snapshot(reopened).strategy.sizePercent,7);
-  assert.equal(snapshot(reopened).defaultStrategy.type,'sma'); assert.equal(snapshot(reopened).defaultStrategy.interval,60);
+  assert.equal(snapshot(reopened).defaultStrategy.type,'sma'); assert.equal(snapshot(reopened).defaultStrategy.interval,30);
 });
 
 test('warm-up is always ten and long-period indicators use available samples without invalid values', () => {
@@ -99,4 +99,20 @@ test('warm-up is always ten and long-period indicators use available samples wit
   }
   assert.equal(sma([100,100],30),100);
   assert.equal(bands([100,100],30,2).lower,100);
+});
+
+test('slow paper preset upgrades once without changing size or limits; live preset stays unchanged', t => {
+  for (const mode of ['paper','live']) {
+    const cfg=config({},false); cfg.mode=mode;
+    const store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
+    const key=`${cfg.pair}:${mode}:strategy`;
+    store.set(key,{...strategySettings(cfg),type:'sma',fast:10,slow:30,interval:60,sizePercent:5});
+    const e=new Engine(cfg,store,{});
+    assert.equal(cfg.sampleMs,mode==='paper'?30000:60000); assert.equal(cfg.tradePercentBps,500);
+    assert.equal(e.active(),false); assert.equal(cfg.maxDaily,mode==='paper'?'1000000000':'500000000');
+    if(mode==='paper') {
+      e.configure({...strategySettings(cfg),fast:10,slow:30,interval:60});
+      const fresh=new Engine(config({},false),store,{}); assert.equal(fresh.cfg.sampleMs,60000);
+    }
+  }
 });

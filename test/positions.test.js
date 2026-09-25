@@ -124,3 +124,12 @@ test('Stop defers paper cash reset for an unsettled operation and never writes l
   engine.setPaperBalance('4'); cfg.mode='live'; engine.stop(true);
   assert.equal(store.get(engine.paperKey()).SOL,'4000000000');
 });
+
+test('daily entry allowance counts buys but not sell proceeds', t => {
+  const {engine,store,cfg}=fixture(t);cfg.maxDaily='500000000';
+  const day=new Date(engine.now()).toISOString().slice(0,10);
+  store.put({id:'old-sell',pair:cfg.pair,mode:'paper',side:'sell',status:'filled',day,notional:'900000000'});
+  assert.doesNotThrow(()=>engine.budget(100000000n));
+  store.put({id:'old-buy',pair:cfg.pair,mode:'paper',side:'buy',status:'filled',day,notional:'500000000'});
+  assert.throws(()=>engine.budget(1n),/Daily/);
+});
