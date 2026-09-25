@@ -10,6 +10,7 @@ const cfg = config({}, false);
 let step = 0;
 const market = {
   async quote(input, output, amount) {
+    if (input === 'SOL' && output === 'USDT') return { inputMint: cfg.tokens.SOL.mint, outputMint: cfg.tokens.USDT.mint, inAmount: amount, outAmount: '150000000', otherAmountThreshold: '149250000', slippageBps: 50, swapMode: 'ExactIn' };
     const price = BigInt(Math.round(550000000000 + Math.sin(step++ / 4) * 8000000000 + Math.sin(step / 11) * 3000000000));
     const unit = 10n ** BigInt(cfg.tokens[cfg.base].decimals);
     const assetPrice = cfg.base === 'cbBTC' ? price : price / 80000n;

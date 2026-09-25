@@ -92,6 +92,20 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
   let lastAction = 0, walletBusy = false;
   let priceRequest = null, lastPrice = null;
   let assetBusy = false;
+  let returnRate = null, returnRateRequest = null;
+  async function realizedReturnRate() {
+    const currency = engine.cfg.quote;
+    if (returnRate?.currency === currency && clock() - returnRate.time < 30000) return returnRate;
+    if (returnRateRequest) return returnRateRequest;
+    returnRateRequest = (async () => {
+      const cfg = engine.cfg, amount = (10n ** BigInt(cfg.tokens[currency].decimals)).toString();
+      const q = validateQuote(await engine.jupiter.quote(currency, 'USDT', amount), currency, 'USDT', amount, cfg);
+      const rate = Number(q.outAmount) / 10 ** cfg.tokens.USDT.decimals;
+      if (!Number.isFinite(rate) || rate <= 0) throw new UserError('USDT conversion unavailable.');
+      returnRate = { currency, rate, time: clock() }; return returnRate;
+    })();
+    try { return await returnRateRequest; } finally { returnRateRequest = null; }
+  }
   async function marketPrice() {
     if (assetBusy) throw new UserError('Asset change in progress.');
     if (priceRequest) return priceRequest;
@@ -131,6 +145,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       if (!path.startsWith('/api/')) return reply(404, { error: 'Not found' });
       if (!demo && !authenticate(req.headers.authorization?.replace(/^tma /, ''), token, owner))
         return reply(401, { error: 'Open this app from your bot in Telegram using the authorized owner account.' });
+      if (req.method === 'GET' && path === '/api/return-rate') return reply(200, await realizedReturnRate());
       if (req.method === 'GET' && path === '/api/price') return reply(200, await marketPrice());
       if (req.method === 'GET' && path === '/api/state') return reply(200, { ...snapshot(engine), demo });
       if (req.method === 'GET' && path === '/api/balance') { const balance = await engine.balances(); return reply(200, { ...balance, availableToTrade: availableQuote(balance, engine.cfg).toString() }); }
