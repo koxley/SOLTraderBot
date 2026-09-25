@@ -144,3 +144,19 @@ test('USDT valuation is authenticated, cached and uses a quote without submittin
   const secured=appServer(engine,{token:'123:secret',owner:'456'});await new Promise(r=>secured.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>secured.close(r)));
   assert.equal((await fetch(`http://127.0.0.1:${secured.address().port}/api/return-rate`)).status,401);
 });
+
+test('opening or starting restores recent observed chart history without restoring strategy warm-up or trades', t => {
+  const {engine,store}=fixture(t); const now=engine.now();
+  store.set(engine.key('chartSamples'),[{time:now-60000,price:'1000000000'},{time:now-15000,price:'1100000000'}]);
+  engine.stop(true); assert.equal(snapshot(engine).samples.length,0);
+  engine.restoreChart(); assert.equal(snapshot(engine).samples.length,2);
+  assert.equal(snapshot(engine).warmup,0); assert.equal(engine.orders().length,0);
+  engine.stop(true);engine.start();assert.equal(snapshot(engine).samples.length,2);assert.equal(snapshot(engine).warmup,0);
+  const key=engine.chartHistoryKey();engine.stop();engine.configure({...strategySettings(engine.cfg),marketType:'track',asset:'USDT'});
+  assert.notEqual(engine.chartHistoryKey(),key);engine.restoreChart();assert.equal(snapshot(engine).samples.length,0);
+});
+test('price history cache rejects stale, future and invalid samples and is bounded', t => {
+  const {engine}=fixture(t);const now=engine.now();
+  const history=engine.rememberChart([{time:now-1000000,price:'1'},{time:now+10000,price:'1'},{time:now,price:'NaN'},{time:now-1000,price:'123'}]);
+  assert.equal(history.length,1);assert.equal(history[0].price,'123');
+});
