@@ -129,7 +129,7 @@ test('cbBTC wallet balance and receipt readers use the approved mint', async () 
   assert.deepEqual(await wallet.receipt({input:'SOL',side:'buy',signature:'mock'}),{input:'25000000',output:'5000'});
 });
 
-test('display price refreshes at five seconds while chart samples stay fifteen seconds apart', async t => {
+test('display price and chart both refresh every five seconds without advancing strategy warm-up', async t => {
   const cfg = makeConfig({ TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   let now = 150000, requests = 0;
   const provider = { async quote(input, output, amount) {
@@ -146,14 +146,15 @@ test('display price refreshes at five seconds while chart samples stay fifteen s
   assert.equal((await fetch(url)).status,401); assert.equal(requests,0);
   const read=async()=>{const response=await fetch(url,{headers}); assert.equal(response.status,200); return response.json();};
   assert.equal((await read()).price,501); assert.equal((await read()).price,501); assert.equal(requests,1);
-  now+=5000; assert.equal((await read()).price,502); assert.equal(snapshot(engine).samples.length,1);
-  now+=5000; await read(); assert.equal(snapshot(engine).samples.length,1);
+  now+=5000; assert.equal((await read()).price,502); assert.equal(snapshot(engine).samples.length,2);
+  now+=5000; await read(); assert.equal(snapshot(engine).samples.length,3);
   now+=5000; await read(); const samples=snapshot(engine).samples;
-  assert.equal(samples.length,2); assert.equal(samples[1].time-samples[0].time,15000);
+  assert.equal(samples.length,4); assert.equal(samples[1].time-samples[0].time,5000);
+  assert.equal(snapshot(engine).chartInterval,5);
   assert.equal(engine.active(),false); assert.equal(engine.orders().length,0);
   assert.equal(store.get(engine.key('samples')),undefined); assert.equal(snapshot(engine).warmup,0);
   now+=5000; provider.quote=async()=>{throw new Error('provider unavailable');};
-  assert.equal((await fetch(url,{headers})).status,503); assert.equal(snapshot(engine).samples.length,2);
+  assert.equal((await fetch(url,{headers})).status,503); assert.equal(snapshot(engine).samples.length,4);
 });
 
 test('display and strategy quotes share provider spacing without overlapping requests', async () => {
