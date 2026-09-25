@@ -40,7 +40,7 @@ Completed sells persist allocations to their original buy IDs, including sold qu
 
 ## Stop resets the displayed session
 
-Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart starts collecting again on Start. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and daily spending limits. If an operation is in flight, the cash reset waits for settlement.
+Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart reloads up to 15 minutes of separately cached observed prices on Open or Start, then continues collecting. Stop still clears the visible chart immediately. Cached chart prices never count toward strategy warm-up, and unavailable history is not fabricated. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and daily spending limits. If an operation is in flight, the cash reset waits for settlement.
 
 ## Responsive paper preset upgrade
 
