@@ -43,3 +43,16 @@ test('reopen endpoint performs reset; start and restart use one SOL despite a pr
   engine.stop(); engine.setPaperBalance('3'); engine.start();
   assert.equal(store.get(engine.paperKey()).SOL,'1000000000');
 });
+test('every successful start resets realized return in paper and live modes', t=>{
+  const {engine,store}=fixture(t);
+  assert.equal(snapshot(engine).realized,0.25);
+  engine.start(); assert.equal(snapshot(engine).realized,0);
+  engine.stop();
+  store.put({id:'paper-later',pair:engine.cfg.pair,mode:'paper',side:'sell',input:engine.cfg.base,output:engine.cfg.quote,amount:'1',status:'filled',time:2,realizedQuote:'50000000'});
+  assert.equal(snapshot(engine).realized,0.05);
+  engine.start(); assert.equal(snapshot(engine).realized,0);
+  engine.stop(); engine.cfg.mode='live'; engine.wallet={address:'wallet'};
+  store.put({id:'live-return',pair:engine.cfg.pair,mode:'live',side:'sell',input:engine.cfg.base,output:engine.cfg.quote,amount:'1',status:'filled',time:3,realizedQuote:'90000000'});
+  assert.equal(snapshot(engine).realized,0.09);
+  engine.start(); assert.equal(snapshot(engine).realized,0);
+});

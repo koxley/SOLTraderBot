@@ -219,6 +219,11 @@ export class Engine {
     if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
     this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
   }
+  resetRealizedReturn() {
+    const realized = this.orders().filter(order => order.mode === this.cfg.mode)
+      .reduce((sum, order) => sum + BigInt(order.realizedQuote || order.realizedSOL || '0'), 0n);
+    this.store.set(this.key('realizedBaseline'), realized.toString());
+  }
   chartHistoryKey() {
     const market = this.market();
     return `chartHistory:${this.cfg.tokens[market.asset].mint}:${this.cfg.tokens[market.reference].mint}`;
@@ -246,6 +251,7 @@ export class Engine {
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
     if (this.market().executable) this.resetPaperSOL();
+    this.resetRealizedReturn();
     this.restoreChart();
     this.stopping = false;
     this.store.set(this.key('chartReset'), false);

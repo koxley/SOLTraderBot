@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const app=readFileSync(new URL('../web/app.js',import.meta.url),'utf8');
+const index=readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 const functions=app.slice(app.indexOf('function renderReturnUSDT()')).replace('\nrefreshReturnRate();','').replace('setInterval(refreshReturnRate, 5000);','');
+test('Available to Trade has no editable balance controls',()=>{
+  assert.doesNotMatch(index,/edit-balance|balance-form|balance-amount|save-balance/);
+  assert.doesNotMatch(app,/edit-balance|balance-form|balance-amount|save-balance/);
+});
 test('balance equivalent renders, survives brief quote outages with a label, expires and recovers', async()=>{
   let now=1000, fail=false, calls=0;
   const elements={}, labels={};
