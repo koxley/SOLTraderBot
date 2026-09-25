@@ -90,7 +90,7 @@ export class Engine {
     // One-time upgrade of the slow paper preset; retain size, limits, asset and all holdings.
     if (cfg.mode === 'paper' && !store.get(this.key('responsivePresetV1'))) {
       if (saved?.type === 'sma' && Number(saved.fast) === 10 && Number(saved.slow) === 30 && Number(saved.interval) === 60) {
-        saved = { ...saved, fast: 5, slow: 12, interval: 30, maxDaily: Number(saved.maxDaily) === 0.5 ? '1' : saved.maxDaily };
+        saved = { ...saved, fast: 5, slow: 12, interval: 30 };
         store.atomic(() => {
           store.set(this.key('strategy'), saved); store.set(this.key('samples'), []);
           store.set(this.key('tracker'), null);
@@ -253,7 +253,7 @@ export class Engine {
     const orders = this.orders().filter(o => o.mode === this.cfg.mode);
     this.rememberChart([...(this.store.get(this.key('samples')) || []), ...(this.store.get(this.key('chartSamples')) || [])]);
     this.store.atomic(() => {
-      // Keep the accounting ledger for open-buy relationships, reconciliation and daily limits.
+      // Keep the accounting ledger for open-buy relationships, reconciliation and accounting.
       this.store.set(this.key('hiddenHistory'), orders.map(o => o.id));
       this.store.set(this.key('realizedBaseline'), orders.reduce((n,o) => n + BigInt(o.realizedQuote || o.realizedSOL || '0'), 0n).toString());
       this.store.set(this.key('samples'), []); this.store.set(this.key('chartSamples'), []);
@@ -269,10 +269,7 @@ export class Engine {
   async balances() { return this.cfg.mode === 'paper' ? this.store.get(this.paperKey()) : this.wallet ? this.wallet.balances() : { SOL: '0', [this.cfg.splToken]: '0' }; }
   budget(notional) {
     if (notional > BigInt(this.cfg.maxTrade)) throw new UserError('Per-trade limit exceeded. Adjust limits before restarting.');
-    const day = new Date(this.now()).toISOString().slice(0, 10);
-    const used = this.orders().filter(o => o.mode === this.cfg.mode && o.side === 'buy' && o.day === day && ['filled', 'submitting', 'unknown'].includes(o.status))
-      .reduce((sum, o) => sum + BigInt(o.notional), 0n);
-    if (used + notional > BigInt(this.cfg.maxDaily)) throw new UserError('Daily gross trading limit reached (UTC).');
+
   }
   async tick() {
     if (this.busy || (!this.active() && !this.closing)) return null;
@@ -438,6 +435,6 @@ export class Engine {
     const p = this.position();
     const market = this.market();
     const heading = market.executable ? `${market.asset}/${market.reference} trading` : `${market.asset} single-coin tracking (${market.reference} reference; no trades)`;
-    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade; ${format(this.cfg.maxDaily, this.cfg.quoteDecimals)} ${this.cfg.quote} gross/day\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
+    return `${this.cfg.mode.toUpperCase()} · ${this.active() ? 'RUNNING' : 'STOPPED'}\n${heading} · ${(this.cfg.strategyType || "ema").toUpperCase()} · ${this.cfg.sampleMs / 1000}s samples\nWarm-up: ${Math.min(samples.length, warmup(this.cfg))}/${warmup(this.cfg)}\nLast sample: ${samples.length ? new Date(samples.at(-1).time).toISOString() : 'none'}${market.executable ? `\nTrade size: ${this.cfg.tradePercentBps / 100}% of available balance\nSlippage: ${this.cfg.slippage / 100}%\nLimits: ${format(this.cfg.maxTrade, this.cfg.quoteDecimals)} ${this.cfg.quote}/trade\nPosition: ${p ? `${format(p.amount, this.cfg.tokens[this.cfg.base].decimals)} ${this.cfg.base}; cost ${format(p.cost, this.cfg.quoteDecimals)} ${this.cfg.quote}` : 'none'}\nUnsettled trades: ${this.pending().length}` : `\nTracker: ${this.store.get(this.key('tracker'))?.state || 'warming'}\nNo swaps or positions are created in tracking mode.`}`;
   }
 }

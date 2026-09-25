@@ -129,7 +129,7 @@ export function config(env = process.env, requireTelegram = true) {
     pairReady: true,
     marketType: 'pair', trackedAsset: base,
     encryptionKey: '', // Supplied by the authenticated owner at wallet unlock, never from .env.
-    maxTrade: amount(inverse ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL', inverse ? '1' : '0.1', quoteDecimals), maxDaily: amount(inverse ? 'MAX_DAILY_USDC' : 'MAX_DAILY_SOL', inverse ? '5' : '0.5', quoteDecimals),
+    maxTrade: amount(inverse ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL', inverse ? '1' : '0.1', quoteDecimals),
     reserve: amount('MIN_SOL_RESERVE', '0.02', 9), maxFee: amount('MAX_NETWORK_FEE_SOL', '0.01', 9),
     paper: { cbBTC: units(env.PAPER_CBBTC ?? '0', 8).toString(), USDC: units(env.PAPER_USDC ?? (inverse ? '1' : '0'), 6).toString(), DOGE: units(env.PAPER_DOGE ?? '0', dogeDecimals).toString(), SOL: units(env.PAPER_SOL ?? '1', 9).toString() },
     tradeSize: amount(inverse ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL', inverse ? '0.25' : '0.1', quoteDecimals),
