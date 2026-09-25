@@ -130,11 +130,27 @@ export class Engine {
     Object.assign(this.cfg, next);
   }
   async configureWhenReady(settings) {
-    validateStrategy(settings, this.cfg.pair);
+    const requested = validateStrategy(settings, this.cfg.pair);
     const key = this.key('strategy'), deadline = Date.now() + 15000;
     while (this.busy && !this.closing && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
     if (key !== this.key('strategy')) throw new UserError('Market or mode changed. Reload settings and try again.');
     this.configure(settings);
+    return requested;
+  }
+  async configureWithTopSelection(settings, resolve = resolveAsset) {
+    const requested = validateStrategy(settings, this.cfg.pair);
+    if (!requested.selectTopTrading || this.active()) {
+      await this.configureWhenReady(settings);
+      return null;
+    }
+    if (this.busy || this.closing || this.pending().length)
+      throw new UserError('Wait for the current trade to settle before changing the strategy.');
+    const selection = await this.jupiter.topTradingAsset(ASSETS);
+    const currentMint = this.cfg.tokens[this.cfg.base]?.mint;
+    if (selection.asset.mint !== currentMint)
+      await this.changeAsset({ preset: selection.asset.symbol }, resolve, { topTrading: true });
+    this.configure({ ...settings, marketType: 'pair', asset: selection.asset.symbol, selectTopTrading: true });
+    return selection;
   }
   async changeAsset(input, resolve = resolveAsset, { topTrading = false } = {}) {
     if (this.cfg.quote !== 'SOL') throw new UserError('Asset selection requires SOL-funded trading.');

@@ -33,7 +33,7 @@ test('Select Top Trading validates as a stopped paired-trading setting', () => {
   assert.throws(() => validateStrategy({ ...settings, selectTopTrading: 'sometimes' }), /on or off/);
 });
 
-test('Start selects the strongest one-hour asset, updates state and activates its pair', async t => {
+test('Saving Select Top Trading chooses the strongest asset while stopped and Start activates it', async t => {
   const cfg = config({}, false), store = new Store(':memory:', cfg.paper);
   t.after(() => store.close());
   const winner = ASSETS.find(asset => asset.symbol === 'RAY');
@@ -42,13 +42,20 @@ test('Start selects the strongest one-hour asset, updates state and activates it
     quote: async () => { throw new Error('Unexpected quote'); },
   };
   const engine = new Engine(cfg, store, provider);
-  engine.configure({ ...strategySettings(cfg), selectTopTrading: true });
+  const result = await engine.configureWithTopSelection({ ...strategySettings(cfg), selectTopTrading: true }, async () => winner);
+  let state = snapshot(engine);
+  assert.equal(result.asset.symbol, 'RAY');
+  assert.equal(engine.active(), false);
+  assert.equal(state.base, 'RAY');
+  assert.equal(state.market.asset, 'RAY');
+  assert.equal(state.strategy.asset, 'RAY');
+  assert.equal(state.strategy.selectTopTrading, true);
+  assert.equal(store.get('selectedAsset').symbol, 'RAY');
   engine.start();
   assert.throws(() => engine.configure({ ...strategySettings(cfg), selectTopTrading: false }), /Stop the bot/);
   engine.stop();
-  const result = await engine.startWithSelection(async () => winner);
-  const state = snapshot(engine);
-  assert.equal(result.asset.symbol, 'RAY');
+  await engine.startWithSelection(async () => winner);
+  state = snapshot(engine);
   assert.equal(engine.active(), true);
   assert.equal(state.base, 'RAY');
   assert.equal(state.market.asset, 'RAY');

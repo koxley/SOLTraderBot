@@ -184,7 +184,11 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
             engine.switchMode(input.mode, input.acknowledged === true);
             break;
           }
-          case '/api/strategy': await engine.configureWhenReady(await readSettings(req)); break;
+          case '/api/strategy': {
+            const selection = await engine.configureWithTopSelection(await readSettings(req), assetResolver);
+            if (selection) lastPrice = null;
+            break;
+          }
           case '/api/wallet/unlock':
           case '/api/wallet/create': {
             if (demo) {
