@@ -33,16 +33,17 @@ test('Select Top Trading validates as a stopped paired-trading setting', () => {
   assert.throws(() => validateStrategy({ ...settings, selectTopTrading: 'sometimes' }), /on or off/);
 });
 
-test('Saving Select Top Trading chooses the strongest asset while stopped and Start activates it', async t => {
+test('Selecting Select Top Trading chooses the strongest asset immediately and Start does not rank again', async t => {
   const cfg = config({}, false), store = new Store(':memory:', cfg.paper);
   t.after(() => store.close());
   const winner = ASSETS.find(asset => asset.symbol === 'RAY');
+  let rankings = 0;
   const provider = {
-    topTradingAsset: async assets => ({ asset: assets.find(asset => asset.symbol === winner.symbol), gain: 6.25 }),
+    topTradingAsset: async assets => { rankings++; return { asset: assets.find(asset => asset.symbol === winner.symbol), gain: 6.25 }; },
     quote: async () => { throw new Error('Unexpected quote'); },
   };
   const engine = new Engine(cfg, store, provider);
-  const result = await engine.configureWithTopSelection({ ...strategySettings(cfg), selectTopTrading: true }, async () => winner);
+  const result = await engine.setTopTrading(true, async () => winner);
   let state = snapshot(engine);
   assert.equal(result.asset.symbol, 'RAY');
   assert.equal(engine.active(), false);
@@ -51,10 +52,12 @@ test('Saving Select Top Trading chooses the strongest asset while stopped and St
   assert.equal(state.strategy.asset, 'RAY');
   assert.equal(state.strategy.selectTopTrading, true);
   assert.equal(store.get('selectedAsset').symbol, 'RAY');
+  assert.equal(rankings, 1);
   engine.start();
+  assert.equal(rankings, 1);
   assert.throws(() => engine.configure({ ...strategySettings(cfg), selectTopTrading: false }), /Stop the bot/);
   engine.stop();
-  await engine.startWithSelection(async () => winner);
+  engine.start();
   state = snapshot(engine);
   assert.equal(engine.active(), true);
   assert.equal(state.base, 'RAY');
@@ -62,4 +65,5 @@ test('Saving Select Top Trading chooses the strongest asset while stopped and St
   assert.equal(state.strategy.asset, 'RAY');
   assert.equal(state.strategy.selectTopTrading, true);
   assert.equal(store.get('selectedAsset').symbol, 'RAY');
+  assert.equal(rankings, 1);
 });

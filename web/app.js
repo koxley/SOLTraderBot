@@ -3,7 +3,7 @@ tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
 const marketFields = document.createElement('div');
 marketFields.className = 'settings-grid';
-marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label><label class="strategy-field top-trading-option" for="setting-selectTopTrading"><span><input id="setting-selectTopTrading" name="selectTopTrading" type="checkbox" value="true"> Select Top Trading</span><small>Available only while stopped. Saving selects the stored Asset List coin with the highest Jupiter one-hour percentage gain and updates the dashboard.</small></label>';
+marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label>';
 $('strategy-fields').prepend(marketFields);
 const riskSettings = document.createElement('section');
 riskSettings.className = 'risk-settings';
@@ -47,12 +47,26 @@ function updateStrategyFields() {
 }
 function updateTrackedCoinLock(s) {
   $('setting-asset').disabled = s.running;
-  $('setting-selectTopTrading').disabled = s.running;
+  $('setting-selectTopTrading').disabled = s.running || actionBusy || s.busy || s.closing || !!s.pending || !!s.position;
 }
 $('setting-type').addEventListener('change', updateStrategyFields);
-$('setting-selectTopTrading').addEventListener('change', event => {
-  if (event.target.checked) $('setting-marketType').value = 'pair';
-  previewTrackedCoin();
+$('setting-selectTopTrading').addEventListener('change', async event => {
+  if (!state || actionBusy || state.running) { if (state) event.target.checked = state.strategy.selectTopTrading; return; }
+  const enabled = event.target.checked;
+  actionBusy = true; $('asset-error').hidden = true;
+  text('asset-status', enabled ? 'Finding the strongest one-hour Asset List performer…' : 'Turning off top trading selection…');
+  render(state);
+  try {
+    const result = await api('top-trading', 'POST', { enabled });
+    livePrice = null; assetDirty = false; settingsDirty = false;
+    render({ ...result, demo: state?.demo });
+    text('asset-status', enabled ? `${result.base} selected from the Asset List. Trading remains stopped.` : 'Select Top Trading turned off.');
+    toast(enabled ? `SOL / ${result.base} selected. Start the bot when ready.` : 'Select Top Trading turned off.');
+  } catch (error) {
+    event.target.checked = state.strategy.selectTopTrading;
+    text('asset-error', error.message); $('asset-error').hidden = false;
+    text('asset-status', 'The current trading asset was not changed.');
+  } finally { actionBusy = false; await refresh(); await balances(); await refreshPrice(); }
 });
 const number = (v, max = 6) => Number(v).toLocaleString('en-US', { maximumFractionDigits: max });
 const text = (id, value) => { $(id).textContent = value; };
@@ -72,7 +86,7 @@ function previewTrackedCoin() {
 }
 function toast(message) { text('toast', message); $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 6000); }
 async function api(path, method = 'GET', body) {
-  const response = await fetch('/api/' + path, { method, headers: { Authorization: `tma ${tg?.initData || ''}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(path === 'asset' ? 60000 : 20000) });
+  const response = await fetch('/api/' + path, { method, headers: { Authorization: `tma ${tg?.initData || ''}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(['asset', 'top-trading'].includes(path) ? 60000 : 20000) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;

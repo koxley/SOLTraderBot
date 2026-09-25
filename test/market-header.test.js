@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 const functions = app.slice(app.indexOf('function renderMarketHeader('), app.indexOf('function toast('));
 const trackedCoinLock = app.slice(app.indexOf('function updateTrackedCoinLock('), app.indexOf("$('setting-type').addEventListener"));
 
 test('Tracked Coin and Select Top Trading are locked only while the bot is running', () => {
   const fields = { 'setting-asset': {}, 'setting-selectTopTrading': {} };
-  const sandbox = { $: id => fields[id] };
+  const sandbox = { actionBusy: false, $: id => fields[id] };
   vm.createContext(sandbox);
   vm.runInContext(trackedCoinLock, sandbox);
   sandbox.updateTrackedCoinLock({ running: true });
@@ -18,6 +19,13 @@ test('Tracked Coin and Select Top Trading are locked only while the bot is runni
   sandbox.updateTrackedCoinLock({ running: false });
   assert.equal(fields['setting-asset'].disabled, false);
   assert.equal(fields['setting-selectTopTrading'].disabled, false);
+});
+
+test('Select Top Trading is placed directly under the Trading asset heading', () => {
+  const heading = html.indexOf('<h2>Trading asset</h2>');
+  const option = html.indexOf('id="setting-selectTopTrading"');
+  const description = html.indexOf('<p class="muted">SOL funds buys.', heading);
+  assert.ok(heading >= 0 && option > heading && option < description);
 });
 
 test('changing Tracked Coin immediately previews the selected SOL pair', () => {

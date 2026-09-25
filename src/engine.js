@@ -152,6 +152,14 @@ export class Engine {
     this.configure({ ...settings, marketType: 'pair', asset: selection.asset.symbol, selectTopTrading: true });
     return selection;
   }
+  async setTopTrading(enabled, resolve = resolveAsset) {
+    if (typeof enabled !== 'boolean') throw new UserError('Select Top Trading must be on or off.');
+    return this.configureWithTopSelection({
+      ...strategySettings(this.cfg),
+      ...(enabled ? { marketType: 'pair', asset: this.cfg.base } : {}),
+      selectTopTrading: enabled,
+    }, resolve);
+  }
   async changeAsset(input, resolve = resolveAsset, { topTrading = false } = {}) {
     if (this.cfg.quote !== 'SOL') throw new UserError('Asset selection requires SOL-funded trading.');
     if (this.active() || this.busy || this.closing || this.store.orders().some(o => unresolved.has(o.status)))
@@ -277,20 +285,6 @@ export class Engine {
     this.store.set('running', true);
     this.store.set('errors', 0);
     this.store.set('lastError', '');
-  }
-  async startWithSelection(resolve = resolveAsset) {
-    if (!this.cfg.selectTopTrading) { this.start(); return null; }
-    if (this.active()) throw new UserError('The bot is already running.');
-    if (this.market().executable && !this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
-    if (this.market().executable && this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
-    if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
-    if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
-    const selection = await this.jupiter.topTradingAsset(ASSETS);
-    const currentMint = this.cfg.tokens[this.cfg.base]?.mint;
-    if (selection.asset.mint !== currentMint)
-      await this.changeAsset({ preset: selection.asset.symbol }, resolve, { topTrading: true });
-    this.start();
-    return selection;
   }
   stop(resetSession = false) {
     this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false);

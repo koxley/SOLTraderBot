@@ -184,9 +184,16 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
             engine.switchMode(input.mode, input.acknowledged === true);
             break;
           }
-          case '/api/strategy': {
-            const selection = await engine.configureWithTopSelection(await readSettings(req), assetResolver);
-            if (selection) lastPrice = null;
+          case '/api/strategy': await engine.configureWhenReady(await readSettings(req)); break;
+          case '/api/top-trading': {
+            const input = await readSettings(req);
+            if (assetBusy) throw new UserError('Asset change already in progress.');
+            assetBusy = true;
+            try {
+              if (priceRequest) await priceRequest.catch(() => {});
+              await engine.setTopTrading(input.enabled, assetResolver);
+              lastPrice = null;
+            } finally { assetBusy = false; }
             break;
           }
           case '/api/wallet/unlock':
@@ -211,11 +218,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
           }
           case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
           case '/api/paper/reset-balance': engine.resetPaperSession(); engine.restoreChart(); break;
-          case '/api/start': {
-            const selection = await engine.startWithSelection(assetResolver);
-            if (selection) lastPrice = null;
-            break;
-          }
+          case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(true); lastPrice = null; break;
           case '/api/close': engine.requestClose(); break;
           case '/api/reconcile': return reply(200, { message: await engine.reconcile() });
