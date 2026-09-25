@@ -10,6 +10,7 @@ let settingsDirty = false, savingSettings = false;
 let assetDirty = false, savingAsset = false;
 let recentSince = Date.now();
 let savingBalance = false;
+let returnRate = null, returnRateAt = 0, returnRateBusy = false;
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
   const tracked = $('setting-asset');
@@ -83,6 +84,7 @@ function render(s) {
   text('realized', tracking ? '—' : (s.realized > 0 ? '+' : '') + number(s.realized, 6));
   text('realized-note', tracking ? 'No swaps submitted' : 'SOL · before network fees');
   $('realized').className = s.realized > 0 ? 'green' : s.realized < 0 ? 'red' : '';
+  renderReturnUSDT();
   text('status-title', s.closing ? 'Bringing it home' : s.running ? 'Your strategy is flying' : 'Ready when you are');
   text('status-pill', s.closing ? 'Closing' : s.running ? (s.warmup < s.warmupRequired ? 'Warming Up' : 'Running') : 'Stopped');
   $('status-pill').className = 'status-pill' + (s.closing ? ' closing' : s.running ? ' running' : '');
@@ -368,3 +370,23 @@ $('load-defaults').addEventListener('click', () => {
   fillSettings(state.defaultStrategy); settingsDirty = true;
   text('settings-status', 'Defaults loaded. Press Save strategy to apply.');
 });
+
+function renderReturnUSDT() {
+  const tracking = state?.market && !state.market.executable;
+  $('realized-usdt').hidden = !!tracking; $('realized-usdt-note').hidden = !!tracking;
+  if (!state || tracking) return;
+  const fresh = returnRate?.currency === state.quote && Date.now() - returnRateAt < 60000;
+  const value = state.realized === 0 ? 0 : fresh ? state.realized * returnRate.rate : null;
+  text('realized-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${value > 0 ? '+' : ''}${number(value, 6)} USDT`);
+  $('realized-usdt').className = value > 0 ? 'green' : value < 0 ? 'red' : '';
+  text('realized-usdt-note', 'Equivalent at current exchange rate · before network fees');
+}
+async function refreshReturnRate() {
+  if (returnRateBusy) return;
+  returnRateBusy = true;
+  try { returnRate = await api('return-rate'); returnRateAt = Date.now(); }
+  catch { returnRate = null; }
+  finally { returnRateBusy = false; renderReturnUSDT(); }
+}
+refreshReturnRate();
+setInterval(refreshReturnRate, 30000);
