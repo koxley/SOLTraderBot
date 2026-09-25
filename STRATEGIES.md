@@ -17,7 +17,7 @@ Saving keeps the current running/stopped state. A save waits up to 15 seconds fo
 
 Changing signal parameters or the sample interval clears indicator history. Warm-up is fixed at 10 samples for all strategies and tracking modes, regardless of configured periods or interval. Until a full indicator window exists, calculations use the available samples; they converge to the configured window as history builds. Warm-up completion enables evaluation but does not guarantee a trade signal. Existing holdings remain intact. No automatic sells occur before warm-up completes. Saving does not place a trade immediately.
 
-Settings persist separately per asset and paper/live mode. A server restart still leaves trading stopped. Quotes and chart display continue at their existing 5-second and 15-second cadences.
+Settings persist separately per asset and paper/live mode. A server restart still leaves trading stopped. The SOL price and chart refresh every 5 seconds by default, independently of the strategy sampling interval. The chart retains up to 15 minutes of observed prices.
 
 Indicator references: [Fidelity RSI](https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI) and [Fidelity Bollinger Bands](https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/bollinger-bands).
 
