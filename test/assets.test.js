@@ -10,7 +10,7 @@ import { strategySettings } from '../src/strategy.js';
 const usdt = ASSETS.find(a => a.symbol === 'USDT');
 const btc = { symbol: 'cbBTC', ...TOKENS.cbBTC };
 function fixture(t) {
-  const cfg = config({}, false), store = new Store(':memory:', cfg.paper);
+  const cfg = config({ TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper);
   const provider = { cfg, quote: async (from, to, amount) => ({ inputMint: cfg.tokens[from].mint,
     outputMint: cfg.tokens[to].mint, inAmount: amount, outAmount: '1000000', otherAmountThreshold: '995000', swapMode: 'ExactIn', slippageBps: 50 }) };
   const engine = new Engine(cfg, store, provider);

@@ -14,7 +14,7 @@ import { Jupiter, Wallet } from '../src/providers.js';
 import { Keypair, TransactionMessage, VersionedTransaction, SystemProgram } from '@solana/web3.js';
 import { strategySettings } from '../src/strategy.js';
 
-const config = (env = {}, required = true) => makeConfig({ TRADING_PAIR: 'DOGE_SOL', ...env }, required);
+const config = (env = {}, required = true) => makeConfig({ TRADING_PAIR: 'DOGE_SOL', STRATEGY_TYPE: 'ema', EMA_FAST: '5', EMA_SLOW: '12', SAMPLE_SECONDS: '15', TRADE_SIZE_SOL: '0.025', ...env }, required);
 
 test('strategy settings persist, update runtime and reset sampling only when needed', t => {
   const f = fixture(t); const original = strategySettings(f.cfg);
@@ -84,8 +84,8 @@ test('paper balance endpoint requires owner authentication and same origin', asy
   assert.equal((await response.json()).paperStartingBalance,'3.5'); assert.equal((await f.engine.balances()).SOL,'3500000000');
 });
 
-test('default cbBTC market buys eight-decimal cbBTC with SOL and closes only its position', async t => {
-  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+test('configured cbBTC market buys eight-decimal cbBTC with SOL and closes only its position', async t => {
+  const cfg = makeConfig({ TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   assert.equal(cfg.base, 'cbBTC'); assert.equal(cfg.splToken, 'cbBTC'); assert.equal(cfg.tokens.cbBTC.decimals, 8);
   assert.equal(cfg.tokens.cbBTC.mint, 'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij');
   const calls = [];
@@ -108,7 +108,7 @@ test('default cbBTC market buys eight-decimal cbBTC with SOL and closes only its
 });
 
 test('cbBTC migration carries SOL settings but isolates previous holdings and blocks live exposure', t => {
-  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  const cfg = makeConfig({ TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   store.set('USDC_SOL:paper:startingBalance','2500000000');
   store.set('USDC_SOL:paper:strategy',{...strategySettings(cfg),sizePercent:'3'});
   store.set('USDC_SOL:paper:position',{amount:'20',cost:'10'});
@@ -130,7 +130,7 @@ test('cbBTC wallet balance and receipt readers use the approved mint', async () 
 });
 
 test('display price refreshes at five seconds while chart samples stay fifteen seconds apart', async t => {
-  const cfg = makeConfig({}, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+  const cfg = makeConfig({ TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   let now = 150000, requests = 0;
   const provider = { async quote(input, output, amount) {
     requests++;
@@ -587,8 +587,8 @@ test('SOL/USDC reconciles buy and sell receipts in the correct direction', async
   assert.deepEqual(await wallet.receipt({ input: 'SOL', side: 'sell', signature: 'mock' }), { input: '2500000', output: '250000' });
 });
 
-test('default SOL-funded USDC strategy buys and closes using the original direction', async t => {
-  const cfg = makeConfig({ TRADING_PAIR: 'USDC_SOL' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
+test('configured SOL-funded USDC strategy buys and closes using the original direction', async t => {
+  const cfg = makeConfig({ TRADING_PAIR: 'USDC_SOL', TRADE_SIZE_SOL: '0.025' }, false), store = new Store(':memory:', cfg.paper); t.after(() => store.close());
   assert.equal(cfg.base, 'USDC'); assert.equal(cfg.quote, 'SOL'); assert.equal(cfg.quoteDecimals, 9);
   assert.equal(cfg.tradeSize, '25000000'); assert.equal(cfg.paper.USDC, '0');
   const calls = [];

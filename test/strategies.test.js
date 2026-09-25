@@ -6,7 +6,7 @@ import { Store } from '../src/store.js';
 import { snapshot } from '../src/server.js';
 import { strategySettings, validateStrategy } from '../src/strategy.js';
 import { sma, rsi, bands, warmup, alternativeSignal } from '../src/indicators.js';
-const cfgFor = patch => ({ ...config({}, false), ...validateStrategy({ ...strategySettings(config({}, false)), ...patch }) });
+const cfgFor = patch => ({ ...config({}, false), ...validateStrategy({ ...strategySettings(config({}, false)), type: 'ema', ...patch }) });
 
 test('indicator calculations use equal-weight SMA, Wilder RSI and population-deviation bands', () => {
   assert.equal(sma([100, 2, 4, 6], 3), 4);
@@ -73,4 +73,16 @@ test('unsettled transactions and closing still block strategy changes without pa
   engine.closing = false; engine.pending = () => [{status:'unknown'}];
   await assert.rejects(engine.configureWhenReady(settings), /settle/);
   assert.equal(cfg.strategyType,'ema');
+});
+
+test('new strategies use slower SMA defaults while saved strategies remain unchanged', t => {
+  const cfg=config({},false), store=new Store(':memory:',cfg.paper); t.after(()=>store.close());
+  const engine=new Engine(cfg,store,{}), s=snapshot(engine);
+  assert.equal(s.strategy.type,'sma'); assert.equal(s.strategy.fast,10); assert.equal(s.strategy.slow,30);
+  assert.equal(s.strategy.interval,60); assert.equal(s.strategy.sizePercent,10);
+  assert.equal(s.strategy.maxTrade,'0.1'); assert.equal(s.strategy.maxDaily,'0.5'); assert.equal(s.strategy.slippage,0.5);
+  engine.configure({...s.strategy,type:'rsi',interval:120,sizePercent:7});
+  const reopened=new Engine(config({},false),store,{});
+  assert.equal(snapshot(reopened).strategy.type,'rsi'); assert.equal(snapshot(reopened).strategy.sizePercent,7);
+  assert.equal(snapshot(reopened).defaultStrategy.type,'sma'); assert.equal(snapshot(reopened).defaultStrategy.interval,60);
 });
