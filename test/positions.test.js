@@ -133,3 +133,14 @@ test('daily entry allowance counts buys but not sell proceeds', t => {
   store.put({id:'old-buy',pair:cfg.pair,mode:'paper',side:'buy',status:'filled',day,notional:'500000000'});
   assert.throws(()=>engine.budget(1n),/Daily/);
 });
+
+test('USDT valuation is authenticated, cached and uses a quote without submitting orders', async t => {
+  const {engine,cfg}=fixture(t); let calls=0, now=100000;
+  engine.jupiter.quote=async(from,to,amount)=>{calls++;assert.equal(from,'SOL');assert.equal(to,'USDT');assert.equal(amount,'1000000000');return {inputMint:cfg.tokens.SOL.mint,outputMint:cfg.tokens.USDT.mint,inAmount:amount,outAmount:'150000000',otherAmountThreshold:'149250000',slippageBps:50,swapMode:'ExactIn'};};
+  const server=appServer(engine,{demo:true,clock:()=>now});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const url=`http://127.0.0.1:${server.address().port}/api/return-rate`;
+  assert.equal((await (await fetch(url)).json()).rate,150);await fetch(url);assert.equal(calls,1);
+  now+=30001;await fetch(url);assert.equal(calls,2);assert.equal(engine.orders().length,0);
+  const secured=appServer(engine,{token:'123:secret',owner:'456'});await new Promise(r=>secured.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>secured.close(r)));
+  assert.equal((await fetch(`http://127.0.0.1:${secured.address().port}/api/return-rate`)).status,401);
+});
