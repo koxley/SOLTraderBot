@@ -125,13 +125,14 @@ test('Stop defers paper cash reset for an unsettled operation and never writes l
   assert.equal(store.get(engine.paperKey()).SOL,'4000000000');
 });
 
-test('daily entry allowance counts buys but not sell proceeds', t => {
+test('daily volume cannot block entries but per-trade limit remains', t => {
   const {engine,store,cfg}=fixture(t);cfg.maxDaily='500000000';
   const day=new Date(engine.now()).toISOString().slice(0,10);
   store.put({id:'old-sell',pair:cfg.pair,mode:'paper',side:'sell',status:'filled',day,notional:'900000000'});
   assert.doesNotThrow(()=>engine.budget(100000000n));
   store.put({id:'old-buy',pair:cfg.pair,mode:'paper',side:'buy',status:'filled',day,notional:'500000000'});
-  assert.throws(()=>engine.budget(1n),/Daily/);
+  assert.doesNotThrow(()=>engine.budget(1n));
+  assert.throws(()=>engine.budget(BigInt(cfg.maxTrade)+1n),/Per-trade/);
 });
 
 test('USDT valuation is authenticated, cached and uses a quote without submitting orders', async t => {

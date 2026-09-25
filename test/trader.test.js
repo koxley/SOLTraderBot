@@ -31,7 +31,7 @@ test('strategy settings persist, update runtime and reset sampling only when nee
 });
 test('strategy rejects invalid settings, allows running edits and blocks in-flight changes', t => {
   const f = fixture(t), settings = strategySettings(f.cfg);
-  for (const patch of [{ fast: 20, slow: 5 }, { sizePercent: '101' }, { slippage: '3.01' }, { interval: '1' }, { sizePercent: '1e-4' }, { maxDaily: '0.001' }, { token: 'secret' }])
+  for (const patch of [{ fast: 20, slow: 5 }, { sizePercent: '101' }, { slippage: '3.01' }, { interval: '1' }, { sizePercent: '1e-4' }, { token: 'secret' }])
     assert.throws(() => f.engine.configure({ ...settings, ...patch }));
   assert.deepEqual(strategySettings(f.cfg), settings);
   assert.equal(f.store.get(f.engine.key('strategy')), undefined);
@@ -255,10 +255,10 @@ test('exits remain possible above entry limits', async t => {
   assert.equal(f.engine.position(), null);
 });
 test('entry budget and insufficient paper funds are enforced before debiting', async t => {
-  const f = fixture(t, { MAX_DAILY_SOL: '0.01' }); f.engine.start();
-  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Daily/);
+  const f = fixture(t, { MAX_TRADE_SOL: '0.01' }); f.engine.start();
+  await assert.rejects(f.engine.trade({ side: 'buy', reason: 'test' }), /Per-trade/);
   assert.equal(f.store.orders().length, 0); assert.equal(f.store.get('paper').SOL, '1000000000');
-  f.cfg.maxDaily = '1000000000'; f.store.set('paper', { SOL: '1', DOGE: '0' });
+  f.cfg.maxTrade = '1000000000'; f.store.set('paper', { SOL: '1', DOGE: '0' });
   assert.match(await f.engine.trade({ side: 'buy', reason: 'test' }), /too small/);
 });
 test('tampered mint, input and slippage are rejected', async t => {

@@ -80,7 +80,7 @@ test('new strategies use slower SMA defaults while saved strategies remain uncha
   const engine=new Engine(cfg,store,{}), s=snapshot(engine);
   assert.equal(s.strategy.type,'sma'); assert.equal(s.strategy.fast,5); assert.equal(s.strategy.slow,12);
   assert.equal(s.strategy.interval,30); assert.equal(s.strategy.sizePercent,10);
-  assert.equal(s.strategy.maxTrade,'0.1'); assert.equal(s.strategy.maxDaily,'0.5'); assert.equal(s.strategy.slippage,0.5);
+  assert.equal(s.strategy.maxTrade,'0.1'); assert.equal(s.strategy.maxDaily,undefined); assert.equal(s.strategy.slippage,0.5);
   engine.configure({...s.strategy,type:'rsi',interval:120,sizePercent:7});
   const reopened=new Engine(config({},false),store,{});
   assert.equal(snapshot(reopened).strategy.type,'rsi'); assert.equal(snapshot(reopened).strategy.sizePercent,7);
@@ -109,7 +109,7 @@ test('slow paper preset upgrades once without changing size or limits; live pres
     store.set(key,{...strategySettings(cfg),type:'sma',fast:10,slow:30,interval:60,sizePercent:5});
     const e=new Engine(cfg,store,{});
     assert.equal(cfg.sampleMs,mode==='paper'?30000:60000); assert.equal(cfg.tradePercentBps,500);
-    assert.equal(e.active(),false); assert.equal(cfg.maxDaily,mode==='paper'?'1000000000':'500000000');
+    assert.equal(e.active(),false); assert.equal(cfg.maxDaily,undefined);
     if(mode==='paper') {
       e.configure({...strategySettings(cfg),fast:10,slow:30,interval:60});
       const fresh=new Engine(config({},false),store,{}); assert.equal(fresh.cfg.sampleMs,60000);
