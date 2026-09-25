@@ -23,3 +23,5 @@
 #chart-lot{padding:8px;border:1px solid #384352;border-radius:8px;background:#0c1119;color:var(--text)}#chart-lot-label{margin-top:12px}
 
 .trade-info small,.trade-info strong,#position-lots p{overflow-wrap:anywhere}
+
+.stat #available-usdt{font-size:14px;color:var(--text);font-variant-numeric:tabular-nums;margin-top:10px}

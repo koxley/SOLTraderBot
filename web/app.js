@@ -31,10 +31,10 @@ function updateStrategyFields() {
   const type = $('setting-type').value;
   document.querySelectorAll('[data-strategies]').forEach(field => { field.hidden = !field.dataset.strategies.split(' ').includes(type); });
   text('strategy-description', {
-    ema: 'Buy when the fast exponential moving average crosses above the slow average. Sell when the fast average is below the slow average.',
-    sma: 'Buy when the fast simple moving average crosses above the slow average. Sell when the fast average is below the slow average. Every sample in each window has equal weight.',
-    rsi: 'Buy when Wilder RSI crosses back above the entry threshold after being oversold. Sell when RSI reaches or exceeds the exit threshold. Defaults: 14 samples, entry 30, exit 70.',
-    bollinger: 'Buy when price returns inside the lower band after a sample below it. Sell when price reaches or exceeds the middle simple moving average. Defaults: 20 samples and 2 standard deviations.'
+    ema: 'Buy when the fast exponential moving average crosses above the slow average. Sell once when the fast average crosses below the slow average.',
+    sma: 'Buy when the fast simple moving average crosses above the slow average. Sell once when the fast average crosses below the slow average. Every sample in each window has equal weight.',
+    rsi: 'Buy when Wilder RSI crosses back above the entry threshold after being oversold. Sell once when RSI crosses up through the exit threshold. Defaults: 14 samples, entry 30, exit 70.',
+    bollinger: 'Buy when price returns inside the lower band after a sample below it. Sell once when price crosses up through the middle simple moving average. Defaults: 20 samples and 2 standard deviations.'
   }[type]);
 }
 $('setting-type').addEventListener('change', updateStrategyFields);
@@ -382,27 +382,27 @@ function renderReturnUSDT() {
   const tracking = state?.market && !state.market.executable;
   $('realized-usdt').hidden = !!tracking; $('realized-usdt-note').hidden = !!tracking;
   if (!state || tracking) return;
-  const fresh = returnRate?.currency === state.quote && Date.now() - returnRateAt < 60000;
+  const fresh = returnRate?.currency === state.quote && Date.now() - returnRateAt < 300000;
   const value = state.realized === 0 ? 0 : fresh ? state.realized * returnRate.rate : null;
   text('realized-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${value > 0 ? '+' : ''}${number(value, 6)} USDT`);
   $('realized-usdt').className = value > 0 ? 'green' : value < 0 ? 'red' : '';
-  text('realized-usdt-note', 'Equivalent at current exchange rate · before network fees');
+  text('realized-usdt-note', fresh && Date.now() - returnRateAt >= 60000 ? 'Delayed exchange-rate estimate · before network fees' : 'Equivalent at current exchange rate · before network fees');
 }
 async function refreshReturnRate() {
-  if (returnRateBusy) return;
+  if (returnRateBusy || (returnRate && Date.now() - returnRateAt < 30000)) return;
   returnRateBusy = true;
   try { returnRate = await api('return-rate'); returnRateAt = Date.now(); }
-  catch { returnRate = null; }
+  catch { /* Keep the last verified estimate briefly during a provider outage. */ }
   finally { returnRateBusy = false; renderReturnUSDT(); }
 }
 refreshReturnRate();
-setInterval(refreshReturnRate, 30000);
+setInterval(refreshReturnRate, 5000);
 
 function renderAvailableUSDT() {
   const tracking = state?.market && !state.market.executable;
   $('available-usdt').hidden = !!tracking;
   if (tracking) return;
-  const fresh = returnRate?.currency === 'SOL' && Date.now() - returnRateAt < 60000;
+  const fresh = returnRate?.currency === 'SOL' && Date.now() - returnRateAt < 300000;
   const value = availableSOL === 0 ? 0 : availableSOL !== null && fresh ? availableSOL * returnRate.rate : null;
-  text('available-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${number(value, 2)} USDT`);
+  text('available-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${number(value, 2)} USDT${value !== 0 && Date.now() - returnRateAt >= 60000 ? ' · delayed estimate' : ''}`);
 }
