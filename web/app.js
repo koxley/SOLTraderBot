@@ -380,13 +380,12 @@ $('load-defaults').addEventListener('click', () => {
 function renderReturnUSDT() {
   renderAvailableUSDT();
   const tracking = state?.market && !state.market.executable;
-  $('realized-usdt').hidden = !!tracking; $('realized-usdt-note').hidden = !!tracking;
+  $('realized-usdt').hidden = !!tracking;
   if (!state || tracking) return;
   const fresh = returnRate?.currency === state.quote && Date.now() - returnRateAt < 300000;
   const value = state.realized === 0 ? 0 : fresh ? state.realized * returnRate.rate : null;
-  text('realized-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${value > 0 ? '+' : ''}${number(value, 6)} USDT`);
+  text('realized-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${value > 0 ? '+' : ''}${number(value, 2)} USDT${value !== 0 && Date.now() - returnRateAt >= 60000 ? ' · delayed estimate' : ''}`);
   $('realized-usdt').className = value > 0 ? 'green' : value < 0 ? 'red' : '';
-  text('realized-usdt-note', fresh && Date.now() - returnRateAt >= 60000 ? 'Delayed exchange-rate estimate · before network fees' : 'Equivalent at current exchange rate · before network fees');
 }
 async function refreshReturnRate() {
   if (returnRateBusy || (returnRate && Date.now() - returnRateAt < 30000)) return;
