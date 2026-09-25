@@ -64,7 +64,7 @@ test('buy signals can add to holdings and live Available to Trade excludes gas r
   const {engine,cfg}=fixture(t);
   cfg.fast=2; cfg.slow=3; cfg.takeProfit=50000; cfg.stopLoss=9000;
   const p={amount:'100000000',cost:'1000000000'};
-  assert.equal(signal([1000000000,1000000000,1000000000,1100000000].map(price=>({price:String(price)})),p,cfg).side,'buy');
+  assert.equal(signal([...Array(9).fill(1000000000),1100000000].map(price=>({price:String(price)})),p,cfg).side,'buy');
   cfg.mode='live'; assert.equal(availableQuote({SOL:'1000000000'},cfg),970000000n);
   assert.equal(availableQuote({SOL:'1'},cfg),0n);
   cfg.mode='paper';

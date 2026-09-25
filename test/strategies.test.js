@@ -86,3 +86,17 @@ test('new strategies use slower SMA defaults while saved strategies remain uncha
   assert.equal(snapshot(reopened).strategy.type,'rsi'); assert.equal(snapshot(reopened).strategy.sizePercent,7);
   assert.equal(snapshot(reopened).defaultStrategy.type,'sma'); assert.equal(snapshot(reopened).defaultStrategy.interval,60);
 });
+
+test('warm-up is always ten and long-period indicators use available samples without invalid values', () => {
+  for (const type of ['ema','sma','rsi','bollinger']) for (const period of [3,30,200]) {
+    const cfg=cfgFor({type,fast:2,slow:period,rsiPeriod:period,bbPeriod:period});
+    assert.equal(warmup(cfg),10);
+    const samples=[...Array(9).fill(100),90].map(price=>({price:String(price)}));
+    assert.equal(signal(samples.slice(0,9),{amount:'1',cost:'100'},cfg),null);
+    if (type==='ema'||type==='sma') assert.equal(signal(samples,{amount:'1',cost:'100'},cfg).side,'sell');
+    assert.ok(Number.isFinite(rsi(samples.map(s=>Number(s.price)),period)));
+    assert.ok(Number.isFinite(bands(samples.map(s=>Number(s.price)),period,2).lower));
+  }
+  assert.equal(sma([100,100],30),100);
+  assert.equal(bands([100,100],30,2).lower,100);
+});

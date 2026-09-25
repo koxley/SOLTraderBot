@@ -197,7 +197,7 @@ test('live execution requires explicit local acknowledgement; invalid strategy r
 });
 test('EMA buy crossover and no threshold exits before warm-up', () => {
   const cfg = config({ DOGE_MINT: mint, EMA_FAST: '2', EMA_SLOW: '3' }, false);
-  const series = [100, 100, 100, 130].map(price => ({ price: String(price * 10000) }));
+  const series = [...Array(9).fill(100), 130].map(price => ({ price: String(price * 10000) }));
   assert.equal(signal(series, null, cfg).side, 'buy');
   assert.equal(signal([{ price: '960000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
   assert.equal(signal([{ price: '1070000' }], { amount: '100000000', cost: '1000000' }, cfg), null);
@@ -205,7 +205,7 @@ test('EMA buy crossover and no threshold exits before warm-up', () => {
 });
 test('automatic crossover buys and strategy sells the configured percentage', async t => {
   const f = fixture(t); f.engine.start();
-  for (const price of [1000000, 1000000, 1000000, 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
+  for (const price of [...Array(9).fill(1000000), 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
   assert.equal(f.store.orders().length, 1); assert.ok(f.engine.position());
   f.price(900000); await f.engine.tick();
   assert.equal(f.store.orders().length, 2); assert.ok(f.engine.position());
@@ -226,7 +226,7 @@ test('single-coin mode tracks every supported asset without creating trades', as
   }
   f.engine.configure({ ...settings, marketType: 'track', asset: 'JUP' });
   f.engine.start();
-  for (const price of [1000000, 1000000, 1000000, 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
+  for (const price of [...Array(9).fill(1000000), 1100000]) { f.price(price); await f.engine.tick(); f.advance(); }
   assert.equal(f.engine.orders().length, 0);
   assert.equal(f.engine.position(), null);
   assert.equal(f.store.get(f.engine.key('tracker')).state, 'entry');
