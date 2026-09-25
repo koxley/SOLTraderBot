@@ -20,11 +20,11 @@ test('indicator calculations use equal-weight SMA, Wilder RSI and population-dev
 test('alternative strategies generate distinct entries and exits, not repeated oversold entries', () => {
   const smaCfg = cfgFor({type:'sma', fast:2, slow:3});
   assert.equal(alternativeSignal([5,4,3,6], null, smaCfg).side, 'buy');
-  assert.equal(alternativeSignal([6,5,4,3], {}, smaCfg).side, 'sell');
+  assert.equal(alternativeSignal([3,4,5,2], {}, smaCfg).side, 'sell');
   const rsiCfg = cfgFor({type:'rsi',rsiPeriod:2});
   assert.equal(alternativeSignal([5,4,3,4], null, rsiCfg).side, 'buy');
   assert.equal(alternativeSignal([5,4,3,2], null, rsiCfg), null);
-  assert.equal(alternativeSignal([1,2,3,4], {}, rsiCfg).side, 'sell');
+  assert.equal(alternativeSignal([3,2,1,2,4], {}, rsiCfg).side, 'sell');
   const bbCfg = cfgFor({type:'bollinger',bbPeriod:3,bbDeviation:1});
   assert.equal(alternativeSignal([10,10,5,8], null, bbCfg).side, 'buy');
   assert.equal(alternativeSignal([10,10,5,8], {}, bbCfg).side, 'sell');
@@ -114,5 +114,28 @@ test('slow paper preset upgrades once without changing size or limits; live pres
       e.configure({...strategySettings(cfg),fast:10,slow:30,interval:60});
       const fresh=new Engine(config({},false),store,{}); assert.equal(fresh.cfg.sampleMs,60000);
     }
+  }
+});
+
+
+test('sells require a fresh exit crossing instead of repeating throughout a regime', () => {
+  for (const type of ['ema','sma']) {
+    const cfg=cfgFor({type,fast:2,slow:3});
+    const prices=[...Array(20).fill(100),120,...Array(20).fill(60),...Array(20).fill(120),...Array(20).fill(60)];
+    const samples=[]; let sells=0;
+    for (const price of prices) {
+      samples.push({price:String(price)});
+      if (signal(samples, {amount:'1000',cost:'1000'}, cfg)?.side==='sell') sells++;
+    }
+    assert.equal(sells,2, type);
+  }
+  for (const [cfg,prices] of [
+    [cfgFor({type:'rsi',rsiPeriod:2}),[3,2,1,2,4]],
+    [cfgFor({type:'bollinger',bbPeriod:3,bbDeviation:1}),[10,10,5,8]],
+    [cfgFor({type:'sma',fast:2,slow:3}),[3,4,5,2]]
+  ]) {
+    assert.equal(alternativeSignal(prices, {}, cfg)?.side,'sell');
+    assert.notEqual(alternativeSignal(prices, null, cfg)?.side,'sell');
+    assert.notEqual(alternativeSignal([...prices,prices.at(-1)], {}, cfg)?.side,'sell');
   }
 });

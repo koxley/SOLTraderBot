@@ -210,7 +210,7 @@ test('automatic crossover buys and strategy sells the configured percentage', as
   assert.equal(f.store.orders().length, 1); assert.ok(f.engine.position());
   f.price(900000); await f.engine.tick();
   assert.equal(f.store.orders().length, 2); assert.ok(f.engine.position());
-  assert.equal(f.store.orders()[0].side, 'sell'); assert.equal(f.store.orders()[0].reason, 'EMA below slow');
+  assert.equal(f.store.orders()[0].side, 'sell'); assert.equal(f.store.orders()[0].reason, 'EMA crossed down');
 });
 test('single-coin mode tracks every supported asset without creating trades', async t => {
   const f = fixture(t), settings = strategySettings(f.cfg);
