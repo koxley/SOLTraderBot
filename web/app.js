@@ -206,13 +206,6 @@ function drawChart(samples) {
   ] : [];
   const levelText = levels.map(level => `${level.name} ${level.sign}${level.percent}% at ${Number(level.price.toPrecision(8))} ${reference}`).join(' · ');
   text('chart-levels', tracking ? `Tracking only · ${state.market.asset} / ${reference} reference · no orders` : levelText ? `${previewLevels ? 'Preview · latest quote, no open position. ' : 'Open position · weighted-average entry. '}${levelText}` : 'Waiting for a price to display TP / SL levels.');
-  const current = Number(samples.at(-1)?.price ?? livePrice?.price ?? state?.price);
-  $('chart-risk-details').hidden = !levels.length;
-  if (levels.length) {
-    const tpGap = (levels[0].price - current) / current * 100, slGap = (current - levels[1].price) / current * 100;
-    text('chart-tp-detail', `+${levels[0].percent}% · ${number(levels[0].price, 9)} ${reference} · ${tpGap > 0 ? number(tpGap, 2) + '% remaining' : 'reached by ' + number(Math.abs(tpGap), 2) + '%'}`);
-    text('chart-sl-detail', `−${levels[1].percent}% · ${number(levels[1].price, 9)} ${reference} · ${slGap > 0 ? number(slGap, 2) + '% buffer' : 'reached by ' + number(Math.abs(slGap), 2) + '%'}`);
-  }
   const canvas = $('chart'), rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dpr = window.devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;

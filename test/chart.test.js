@@ -13,7 +13,7 @@ function chart(position = null, livePrice = null) {
       key === 'fillText' ? (label, x, y) => { assert.ok(Number.isFinite(x) && Number.isFinite(y)); labels.push(label); } : () => {},
     set: () => true
   });
-  const elements = { 'chart-levels': {}, 'chart-risk-details': {}, 'chart-tp-detail': {}, 'chart-sl-detail': {}, chart: { getBoundingClientRect: () => ({ width: 320, height: 178 }),
+  const elements = { 'chart-levels': {}, chart: { getBoundingClientRect: () => ({ width: 320, height: 178 }),
     getContext: () => context, setAttribute: (key, value) => { text[key] = value; } }, 'chart-empty': {} };
   const sandbox = { state: { position, strategy: { takeProfit: 6, stopLoss: 3 }, quote: 'SOL' }, livePrice,
     window: { devicePixelRatio: 1 }, number: (value, max = 6) => Number(value).toLocaleString('en-US', { maximumFractionDigits: max }),
@@ -30,8 +30,6 @@ test('chart shows configurable TP and SL, preserves receipt markers and tightly 
   assert.match(c.text['chart-levels'], /Auto scale 499.985–500.115 SOL/);
   assert.match(c.text['aria-label'], /1 completed buys.*1 completed sells/);
   assert.match(c.text['aria-label'], /Position levels: TP \+6% at 106 SOL · SL −3% at 97 SOL/);
-  assert.match(c.text['chart-tp-detail'], /\+6% · 106 SOL · reached by/);
-  assert.match(c.text['chart-sl-detail'], /−3% · 97 SOL · 80.6% buffer/);
 });
 test('empty and single-sample charts still display active position levels', () => {
   const c=chart({amount:'1',cost:'100'}, {price:120});
