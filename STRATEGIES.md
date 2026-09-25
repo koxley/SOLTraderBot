@@ -1,15 +1,15 @@
 # Selectable strategies
 
-Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 10/30 with 60-second samples, 10% sizing, 0.1 SOL maximum entry, 0.5 SOL daily gross entry limit, and 0.5% slippage. Existing saved settings remain unchanged. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
+Open Strategy, select a strategy, configure its fields and press Save strategy. New unsaved strategies default to SMA 5/12 with 30-second samples, 10% sizing, 0.1 SOL maximum entry, 0.5 SOL daily gross entry limit, and 0.5% slippage. Existing saved settings remain unchanged. Load defaults fills these values for review; Save strategy applies them. Asset selection is preserved. These are paper-test starting values, not proven profit-optimal settings.
 
 | Strategy | Entry | Strategy exit | Defaults |
 |---|---|---|---|
-| EMA crossover | Fast EMA crosses above slow EMA | Fast EMA below slow EMA | 10 / 30 samples |
-| SMA crossover | Fast SMA crosses above slow SMA | Fast SMA below slow SMA | 10 / 30 samples |
+| EMA crossover | Fast EMA crosses above slow EMA | Fast EMA below slow EMA | 5 / 12 samples |
+| SMA crossover | Fast SMA crosses above slow SMA | Fast SMA below slow SMA | 5 / 12 samples |
 | RSI recovery | Wilder RSI crosses above entry threshold from at or below it | RSI at or above exit threshold | 14 samples; 30 / 70 |
 | Bollinger band recovery | Price returns to or above lower band after being below it | Price at or above middle SMA | 20 samples; 2 population standard deviations |
 
-These are long-only signals: buys spend SOL on the selected token; sells close the bot position back to SOL. TP, SL, and trailing stops are no longer used. Periods are sample counts: at the default 60-second interval, 20 samples span approximately twenty minutes. These defaults are not performance guarantees.
+These are long-only signals: buys spend SOL on the selected token; sells close the bot position back to SOL. TP, SL, and trailing stops are no longer used. Periods are sample counts: at the default 30-second interval, 20 samples span approximately ten minutes. These defaults are not performance guarantees.
 
 ## Change while running
 
@@ -41,3 +41,7 @@ Completed sells persist allocations to their original buy IDs, including sold qu
 ## Stop resets the displayed session
 
 Stop clears displayed transactions and chart samples, resets displayed realized return to zero, and restores paper available funds to 1 SOL. The chart starts collecting again on Start. Live wallet balances remain actual balances. Open buy lots and the internal accounting ledger remain intact for closing, buy/sell relationships, reconciliation, and daily spending limits. If an operation is in flight, the cash reset waits for settlement.
+
+## Responsive paper preset upgrade
+
+The saved SMA 10/30, 60-second paper preset is upgraded once to SMA 5/12, 30 seconds. Its trade percentage and per-entry limit are preserved. A 0.5 SOL daily allowance is raised to 1 SOL for this paper preset. Live settings and other strategies are unchanged. The daily entry limit counts buys only; sells do not consume it. No trade is forced: entries still require a fresh crossover and ten warm-up samples.
