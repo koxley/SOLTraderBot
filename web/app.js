@@ -10,6 +10,7 @@ let settingsDirty = false, savingSettings = false;
 let assetDirty = false, savingAsset = false;
 let recentSince = Date.now();
 let savingBalance = false;
+let availableSOL = null;
 let returnRate = null, returnRateAt = 0, returnRateBusy = false;
 let livePrice = null, priceBusy = false, priceFailed = false;
 function fillSettings(settings) {
@@ -104,7 +105,7 @@ function render(s) {
   text('ema', s.strategy.type === 'rsi' ? `${s.strategy.rsiPeriod} samples / ${s.strategy.rsiBuy}-${s.strategy.rsiSell}` : s.strategy.type === 'bollinger' ? `${s.strategy.bbPeriod} samples / ${s.strategy.bbDeviation} SD` : `${s.strategy.fast} / ${s.strategy.slow}`); text('interval', s.chartInterval || 15);
   text('trade-size', tracking ? 'TRACK ONLY' : s.strategy.sizePercent + '%');
   text('strategy-summary-help', tracking ? 'Signals update the tracker only. They are not orders or trading recommendations.' : 'Exits are checked at each sample while running. They are not exchange-held orders or guaranteed prices.');
-  text('max-trade', s.strategy.maxTrade + ' SOL'); text('max-daily', s.strategy.maxDaily + ' SOL'); text('slippage', s.strategy.slippage + '%');
+  text('max-trade', s.strategy.maxTrade + ' SOL'); text('slippage', s.strategy.slippage + '%');
   text('mint-label', market.asset + ' mint: ' + s.assetMint);
   text('trade-count', (s.tradeCount ?? s.trades.length) + ' TOTAL');
   text('dashboard-trade-count', s.mode.toUpperCase());
@@ -229,7 +230,12 @@ async function refreshPrice() {
 async function refresh() {
   try { render(await api('state')); } catch (error) { text('connection-error', error.message); $('connection-error').hidden = false; for (const id of ['start', 'stop', 'close', 'create-wallet']) $(id).disabled = true; }
 }
-async function balances() { if (state?.market && !state.market.executable) return; try { const b = await api('balance'); text('available', number(Number(b.availableToTrade ?? b.SOL) / 1e9, 5)); } catch { text('available', 'Unavailable'); } }
+async function balances() {
+  if (state?.market && !state.market.executable) return;
+  try { const b = await api('balance'); availableSOL = Number(b.availableToTrade ?? b.SOL) / 1e9; text('available', number(availableSOL, 5)); }
+  catch { availableSOL = null; text('available', 'Unavailable'); }
+  renderAvailableUSDT();
+}
 async function wallet() {
   try {
     const w = await api('wallet');
@@ -372,6 +378,7 @@ $('load-defaults').addEventListener('click', () => {
 });
 
 function renderReturnUSDT() {
+  renderAvailableUSDT();
   const tracking = state?.market && !state.market.executable;
   $('realized-usdt').hidden = !!tracking; $('realized-usdt-note').hidden = !!tracking;
   if (!state || tracking) return;
@@ -390,3 +397,12 @@ async function refreshReturnRate() {
 }
 refreshReturnRate();
 setInterval(refreshReturnRate, 30000);
+
+function renderAvailableUSDT() {
+  const tracking = state?.market && !state.market.executable;
+  $('available-usdt').hidden = !!tracking;
+  if (tracking) return;
+  const fresh = returnRate?.currency === 'SOL' && Date.now() - returnRateAt < 60000;
+  const value = availableSOL === 0 ? 0 : availableSOL !== null && fresh ? availableSOL * returnRate.rate : null;
+  text('available-usdt', value === null ? 'USDT equivalent unavailable' : `≈ ${number(value, 2)} USDT`);
+}
