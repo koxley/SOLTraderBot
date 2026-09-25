@@ -210,12 +210,34 @@ export class Engine {
     if (this.cfg.mode !== 'paper' || this.active() || this.busy || this.closing || this.pending().length) return;
     this.store.set(this.paperKey(), { ...this.store.get(this.paperKey()), [this.cfg.quote]: (10n ** BigInt(this.cfg.quoteDecimals)).toString() });
   }
+  chartHistoryKey() {
+    const market = this.market();
+    return `chartHistory:${this.cfg.tokens[market.asset].mint}:${this.cfg.tokens[market.reference].mint}`;
+  }
+  rememberChart(samples) {
+    const key = this.chartHistoryKey(), now = this.now();
+    const buckets = new Map();
+    for (const sample of [...(this.store.get(key) || []), ...samples]) {
+      if (!Number.isFinite(sample.time) || sample.time < now - 15 * 60 * 1000 || sample.time > now || !/^\d+$/.test(String(sample.price)) || BigInt(sample.price) <= 0n) continue;
+      const time = Math.floor(sample.time / 15000) * 15000;
+      buckets.set(time, { time, price: String(sample.price) });
+    }
+    const history = [...buckets.values()].sort((a,b) => a.time-b.time).slice(-60);
+    this.store.set(key, history); return history;
+  }
+  restoreChart() {
+    if (this.store.get(this.key('resetRequested'))) return;
+    const history = this.rememberChart([...(this.store.get(this.key('samples')) || []), ...(this.store.get(this.key('chartSamples')) || [])]);
+    this.store.set(this.key('chartSamples'), history);
+    this.store.set(this.key('chartReset'), false);
+  }
   start() {
     if (this.market().executable && !this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
     if (this.market().executable && this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
     if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
     if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
     if (this.market().executable) this.resetPaperSOL();
+    this.restoreChart();
     this.stopping = false;
     this.store.set(this.key('chartReset'), false);
     this.store.set('running', true);
@@ -229,6 +251,7 @@ export class Engine {
   finishSessionReset() {
     if (!this.store.get(this.key('resetRequested'))) return;
     const orders = this.orders().filter(o => o.mode === this.cfg.mode);
+    this.rememberChart([...(this.store.get(this.key('samples')) || []), ...(this.store.get(this.key('chartSamples')) || [])]);
     this.store.atomic(() => {
       // Keep the accounting ledger for open-buy relationships, reconciliation and daily limits.
       this.store.set(this.key('hiddenHistory'), orders.map(o => o.id));
@@ -272,6 +295,7 @@ export class Engine {
       samples.push({ time: this.now(), price: q.outAmount });
       samples = samples.slice(-Math.max(10, this.cfg.slow + 1, (this.cfg.rsiPeriod ?? 14) + 2, (this.cfg.bbPeriod ?? 20) + 1) * 10);
       this.store.set(this.key('samples'), samples);
+      this.rememberChart([{ time: this.now(), price: q.outAmount }]);
       this.store.set('lastTick', this.now());
       if (!market.executable) {
         const tracked = trackingSignal(samples, this.cfg);

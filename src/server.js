@@ -120,6 +120,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
       const chart = engine.store.get(chartKey) || [];
       // Display sampling is independent of trading, EMA warm-up and strategy intervals.
       const bucket = Math.floor(now / 15000) * 15000;
+      engine.rememberChart([{ time: now, price: q.outAmount }]);
       if (!engine.store.get(engine.key('chartReset')) && (!chart.length || bucket > chart.at(-1).time)) {
         chart.push({ time: bucket, price: q.outAmount });
         engine.store.set(chartKey, chart.slice(-600));
@@ -205,7 +206,7 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
             } finally { walletBusy = false; }
           }
           case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
-          case '/api/paper/reset-balance': engine.resetPaperSession(); break;
+          case '/api/paper/reset-balance': engine.resetPaperSession(); engine.restoreChart(); break;
           case '/api/start': engine.start(); break;
           case '/api/stop': engine.stop(true); lastPrice = null; break;
           case '/api/close': engine.requestClose(); break;
