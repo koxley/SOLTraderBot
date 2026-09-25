@@ -86,7 +86,18 @@ export class Engine {
     if (wallet && cfg.mode === 'live') this.bindWallet(wallet.address);
     // A host restart must never silently resume automated spending.
     this.store.set('running', false);
-    const saved = this.store.get(this.key('strategy'));
+    let saved = this.store.get(this.key('strategy'));
+    // One-time upgrade of the slow paper preset; retain size, limits, asset and all holdings.
+    if (cfg.mode === 'paper' && !store.get(this.key('responsivePresetV1'))) {
+      if (saved?.type === 'sma' && Number(saved.fast) === 10 && Number(saved.slow) === 30 && Number(saved.interval) === 60) {
+        saved = { ...saved, fast: 5, slow: 12, interval: 30, maxDaily: Number(saved.maxDaily) === 0.5 ? '1' : saved.maxDaily };
+        store.atomic(() => {
+          store.set(this.key('strategy'), saved); store.set(this.key('samples'), []);
+          store.set(this.key('tracker'), null);
+        });
+      }
+      store.set(this.key('responsivePresetV1'), true);
+    }
     if (saved) Object.assign(this.cfg, validateStrategy(saved, cfg.pair, true));
     else this.cfg.tradePercentBps = Math.max(1, Math.min(10000, Math.round(this.defaultStrategy.sizePercent * 100)));
     this.finishSessionReset();
@@ -236,7 +247,7 @@ export class Engine {
   budget(notional) {
     if (notional > BigInt(this.cfg.maxTrade)) throw new UserError('Per-trade limit exceeded. Adjust limits before restarting.');
     const day = new Date(this.now()).toISOString().slice(0, 10);
-    const used = this.orders().filter(o => o.mode === this.cfg.mode && o.day === day && ['filled', 'submitting', 'unknown'].includes(o.status))
+    const used = this.orders().filter(o => o.mode === this.cfg.mode && o.side === 'buy' && o.day === day && ['filled', 'submitting', 'unknown'].includes(o.status))
       .reduce((sum, o) => sum + BigInt(o.notional), 0n);
     if (used + notional > BigInt(this.cfg.maxDaily)) throw new UserError('Daily gross trading limit reached (UTC).');
   }

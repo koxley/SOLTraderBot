@@ -49,7 +49,7 @@ export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
 
 // Default button values are independent of saved settings and old deployment overrides.
 export function recommendedDefaults(cfg) {
-  return { ...strategySettings(cfg), type: 'sma', fast: 10, slow: 30, interval: 60,
+  return { ...strategySettings(cfg), type: 'sma', fast: 5, slow: 12, interval: 30,
     sizePercent: 10, maxTrade: cfg.quote === 'SOL' ? '0.1' : '1',
     maxDaily: cfg.quote === 'SOL' ? '0.5' : '5', slippage: 0.5 };
 }
