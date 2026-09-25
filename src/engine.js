@@ -3,7 +3,7 @@ import { warmup, alternativeSignal } from './indicators.js';
 import { randomUUID } from 'node:crypto';
 import { UserError, format, units } from './config.js';
 import { strategySettings, validateStrategy } from './strategy.js';
-import { assetConfig, resolveAsset, selectedPreset } from './assets.js';
+import { ASSETS, assetConfig, resolveAsset, selectedPreset } from './assets.js';
 
 const unresolved = new Set(['submitting', 'unknown']);
 const positiveInteger = n => typeof n === 'string' && /^\d+$/.test(n) && BigInt(n) > 0n;
@@ -116,6 +116,8 @@ export class Engine {
       throw new UserError('Wait for the current trade to settle before changing the strategy.');
     const next = validateStrategy(settings, this.cfg.pair);
     const previousSettings = strategySettings(this.cfg), nextSettings = strategySettings(next);
+    if (this.active() && nextSettings.selectTopTrading !== previousSettings.selectTopTrading)
+      throw new UserError('Stop the bot before changing Select Top Trading.');
     const marketChanged = nextSettings.marketType !== previousSettings.marketType ||
       (nextSettings.marketType === 'track' && nextSettings.asset !== previousSettings.asset);
     if (marketChanged && this.position()) throw new UserError('Close the open position before changing between trading and tracking.');
@@ -134,7 +136,7 @@ export class Engine {
     if (key !== this.key('strategy')) throw new UserError('Market or mode changed. Reload settings and try again.');
     this.configure(settings);
   }
-  async changeAsset(input, resolve = resolveAsset) {
+  async changeAsset(input, resolve = resolveAsset, { topTrading = false } = {}) {
     if (this.cfg.quote !== 'SOL') throw new UserError('Asset selection requires SOL-funded trading.');
     if (this.active() || this.busy || this.closing || this.store.orders().some(o => unresolved.has(o.status)))
       throw new UserError('Stop the bot and settle all trades before changing asset.');
@@ -151,7 +153,8 @@ export class Engine {
       const asset = this.store.get(`asset:${resolved.mint}`) || resolved;
       const next = assetConfig(this.cfg, asset);
       if (generation !== this.generation || this.closing) throw new UserError('Asset change cancelled. Try again while stopped.');
-      const settings = validateStrategy(this.store.get(`${next.pair}:${this.cfg.mode}:strategy`) || strategySettings(this.cfg), next.pair);
+      const savedSettings = this.store.get(`${next.pair}:${this.cfg.mode}:strategy`) || strategySettings(this.cfg);
+      const settings = validateStrategy(topTrading ? { ...savedSettings, marketType: 'pair', asset: asset.symbol, selectTopTrading: true } : savedSettings, next.pair);
       const startingBalance = this.store.get(this.key('startingBalance')) || '1000000000';
       this.store.atomic(() => {
         this.store.set('selectedAsset', asset);
@@ -258,6 +261,20 @@ export class Engine {
     this.store.set('running', true);
     this.store.set('errors', 0);
     this.store.set('lastError', '');
+  }
+  async startWithSelection(resolve = resolveAsset) {
+    if (!this.cfg.selectTopTrading) { this.start(); return null; }
+    if (this.active()) throw new UserError('The bot is already running.');
+    if (this.market().executable && !this.cfg.pairReady) throw new UserError('Trading pair is not configured.');
+    if (this.market().executable && this.cfg.mode === 'live' && !this.wallet) throw new UserError('Create your wallet in the app first.');
+    if (this.closing || this.busy) throw new UserError('An operation is in progress. Wait for it to finish.');
+    if (this.pending().length) throw new UserError('An unsettled trade blocks starting. Use /reconcile.');
+    const selection = await this.jupiter.topTradingAsset(ASSETS);
+    const currentMint = this.cfg.tokens[this.cfg.base]?.mint;
+    if (selection.asset.mint !== currentMint)
+      await this.changeAsset({ preset: selection.asset.symbol }, resolve, { topTrading: true });
+    this.start();
+    return selection;
   }
   stop(resetSession = false) {
     this.generation++; this.stopping = true; this.closing = false; this.store.set('running', false);

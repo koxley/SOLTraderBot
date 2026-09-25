@@ -31,6 +31,19 @@ export class Jupiter {
     return this.request(`https://api.jup.ag/swap/v2/order?${params}`, { headers: this.headers() });
   }
   headers() { return { 'Content-Type': 'application/json', ...(this.cfg.apiKey ? { 'x-api-key': this.cfg.apiKey } : {}) }; }
+  async topTradingAsset(assets) {
+    if (!Array.isArray(assets) || !assets.length) throw new UserError('The stored Asset List is empty.');
+    const byMint = new Map(assets.map(asset => [asset.mint, asset]));
+    const query = encodeURIComponent(assets.map(asset => asset.mint).join(','));
+    const rows = await this.request(`https://api.jup.ag/tokens/v2/search?query=${query}`, { headers: this.headers() });
+    if (!Array.isArray(rows)) throw new UserError('Jupiter returned invalid one-hour market data.');
+    const ranked = rows.flatMap(row => {
+      const asset = byMint.get(row?.id), gain = Number(row?.stats1h?.priceChange);
+      return asset && Number.isFinite(gain) ? [{ asset, gain }] : [];
+    }).sort((a, b) => b.gain - a.gain || assets.indexOf(a.asset) - assets.indexOf(b.asset));
+    if (!ranked.length) throw new UserError('One-hour performance is unavailable for the stored Asset List.');
+    return ranked[0];
+  }
   execute(order, signedTransaction) {
     return this.request('https://api.jup.ag/swap/v2/execute', { method: 'POST', headers: this.headers(),
       body: JSON.stringify({ signedTransaction, requestId: order.requestId, lastValidBlockHeight: order.lastValidBlockHeight }) }, 60000);

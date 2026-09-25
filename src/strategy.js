@@ -1,7 +1,7 @@
 import { config, format, UserError, TRACKED_ASSETS, TOKENS } from './config.js';
 
 export function strategySettings(cfg) {
-  return { marketType: cfg.marketType || 'pair', asset: cfg.marketType === 'track' ? cfg.trackedAsset : (TRACKED_ASSETS.includes(cfg.trackedAsset || cfg.base) ? (cfg.trackedAsset || cfg.base) : TRACKED_ASSETS[0]), type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
+  return { marketType: cfg.marketType || 'pair', asset: cfg.marketType === 'track' ? cfg.trackedAsset : (TRACKED_ASSETS.includes(cfg.trackedAsset || cfg.base) ? (cfg.trackedAsset || cfg.base) : TRACKED_ASSETS[0]), selectTopTrading: cfg.selectTopTrading === true, type: cfg.strategyType || 'ema', rsiPeriod: cfg.rsiPeriod ?? 14, rsiBuy: cfg.rsiBuy ?? 30, rsiSell: cfg.rsiSell ?? 70, bbPeriod: cfg.bbPeriod ?? 20, bbDeviation: cfg.bbDeviation ?? 2, fast: cfg.fast, slow: cfg.slow, interval: cfg.sampleMs / 1000,
     sizePercent: (cfg.tradePercentBps ?? Math.max(1, Math.min(10000, Number(BigInt(cfg.tradeSize) * 10000n / (10n ** BigInt(cfg.quoteDecimals)))))) / 100,
     stopLoss: (cfg.stopLoss ?? 150) / 100, takeProfit: (cfg.takeProfit ?? 250) / 100, slippage: cfg.slippage / 100,
     maxTrade: format(cfg.maxTrade, cfg.quoteDecimals) };
@@ -10,7 +10,7 @@ export function strategySettings(cfg) {
 export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
   const keys = ['fast', 'slow', 'interval', 'stopLoss', 'takeProfit', 'slippage', 'maxTrade'];
   const optionalOnRestore = new Set(['stopLoss', 'takeProfit']);
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'maxDaily', 'stopLoss', 'takeProfit', 'marketType', 'asset', 'size', 'sizePercent', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => ![...keys, 'maxDaily', 'stopLoss', 'takeProfit', 'marketType', 'asset', 'selectTopTrading', 'size', 'sizePercent', 'type', 'rsiPeriod', 'rsiBuy', 'rsiSell', 'bbPeriod', 'bbDeviation'].includes(k)) ||
       keys.some(k => (!Object.hasOwn(input, k) && !(restore && optionalOnRestore.has(k))) || (Object.hasOwn(input, k) && (!['string', 'number'].includes(typeof input[k]) || !/^\d+(\.\d+)?$/.test(String(input[k]))))))
     throw new UserError('Provide all required strategy settings as positive decimal numbers.');
   if (Object.hasOwn(input, 'size') === Object.hasOwn(input, 'sizePercent')) throw new UserError('Provide trade size as a percentage.');
@@ -18,6 +18,10 @@ export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
   if (!['ema', 'sma', 'rsi', 'bollinger'].includes(strategyType)) throw new UserError('Choose a supported strategy.');
   const marketType = Object.hasOwn(input, 'marketType') ? input.marketType : 'pair';
   if (!['pair', 'track'].includes(marketType)) throw new UserError('Choose paired trading or single-coin tracking.');
+  const selectTopTrading = Object.hasOwn(input, 'selectTopTrading') ? input.selectTopTrading : false;
+  if (![true, false, 'true', 'false', 'on'].includes(selectTopTrading)) throw new UserError('Select Top Trading must be on or off.');
+  const topTrading = selectTopTrading === true || selectTopTrading === 'true' || selectTopTrading === 'on';
+  if (topTrading && marketType !== 'pair') throw new UserError('Select Top Trading requires Paired trading mode.');
   const pairAsset = pair === 'SOL_USDC' ? 'SOL' : pair === 'USDC_SOL' ? 'USDC' : pair === 'DOGE_SOL' ? 'DOGE' : pair === 'CBBTC_SOL' ? 'cbBTC' : null;
   const selectedAsset = Object.hasOwn(input, 'asset') ? input.asset : pairAsset;
   if (marketType === 'track' && !TRACKED_ASSETS.includes(selectedAsset) && !(restore && Object.hasOwn(TOKENS, selectedAsset))) throw new UserError('Choose a tracked coin from the supported Trading Asset list.');
@@ -43,7 +47,7 @@ export function validateStrategy(input, pair = 'CBBTC_SOL', restore = false) {
       [pair === 'SOL_USDC' ? 'TRADE_SIZE_USDC' : 'TRADE_SIZE_SOL']: String(input.size ?? (pair === 'SOL_USDC' ? '0.000001' : '0.000000001')),
       STOP_LOSS_BPS: bps(numeric('stopLoss', 1.5, 0.01, 90)), TAKE_PROFIT_BPS: bps(numeric('takeProfit', 2.5, 0.01, 500)),
       SLIPPAGE_BPS: bps(input.slippage), [pair === 'SOL_USDC' ? 'MAX_TRADE_USDC' : 'MAX_TRADE_SOL']: String(input.maxTrade) }, false);
-    return { ...extra, marketType, trackedAsset, tradePercentBps, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
+    return { ...extra, marketType, trackedAsset, selectTopTrading: topTrading, tradePercentBps, quoteDecimals: cfg.quoteDecimals, fast: cfg.fast, slow: cfg.slow, sampleMs: cfg.sampleMs, tradeSize: cfg.tradeSize,
       stopLoss: cfg.stopLoss, takeProfit: cfg.takeProfit, slippage: cfg.slippage, maxTrade: cfg.maxTrade };
   } catch (error) { throw new UserError(error.message); }
 }

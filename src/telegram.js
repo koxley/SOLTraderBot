@@ -37,7 +37,7 @@ export class Telegram {
     try {
       let response;
       switch (command) {
-        case '/start': this.engine.start(); response = `Automatic ${this.cfg.mode.toUpperCase()} trading started. /status shows warm-up progress. /stop halts trading; /close also sells the bot position.`; break;
+        case '/start': { const selected = await this.engine.startWithSelection(); response = `${selected ? `Selected SOL/${selected.asset.symbol} from the stored Asset List using its ${selected.gain}% one-hour gain.\n` : ''}Automatic ${this.cfg.mode.toUpperCase()} trading started. /status shows warm-up progress. /stop halts trading; /close also sells the bot position.`; break; }
         case '/stop': this.engine.stop(true); response = 'Stopped. Position kept. Any already submitted transaction may still complete.'; break;
         case '/close': this.engine.requestClose(); response = 'Strategy stopped. Closing the bot position as soon as any current operation settles.'; break;
         case '/status': response = this.engine.status(); break;

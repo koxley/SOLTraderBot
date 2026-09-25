@@ -207,7 +207,11 @@ export function appServer(engine, { token, owner, demo = false, publicUrl = '', 
           }
           case '/api/paper/balance': { const input = await readSettings(req); engine.setPaperBalance(input.amount); break; }
           case '/api/paper/reset-balance': engine.resetPaperSession(); engine.restoreChart(); break;
-          case '/api/start': engine.start(); break;
+          case '/api/start': {
+            const selection = await engine.startWithSelection(assetResolver);
+            if (selection) lastPrice = null;
+            break;
+          }
           case '/api/stop': engine.stop(true); lastPrice = null; break;
           case '/api/close': engine.requestClose(); break;
           case '/api/reconcile': return reply(200, { message: await engine.reconcile() });

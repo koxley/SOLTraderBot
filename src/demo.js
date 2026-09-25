@@ -9,6 +9,7 @@ import { UserError } from './config.js';
 const cfg = config({}, false);
 let step = 0;
 const market = {
+  async topTradingAsset() { return { asset: ASSETS.find(asset => asset.symbol === 'RAY'), gain: 4.2 }; },
   async quote(input, output, amount) {
     if (input === 'SOL' && output === 'USDT') return { inputMint: cfg.tokens.SOL.mint, outputMint: cfg.tokens.USDT.mint, inAmount: amount, outAmount: '150000000', otherAmountThreshold: '149250000', slippageBps: 50, swapMode: 'ExactIn' };
     const price = BigInt(Math.round(550000000000 + Math.sin(step++ / 4) * 8000000000 + Math.sin(step / 11) * 3000000000));

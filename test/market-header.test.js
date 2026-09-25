@@ -7,15 +7,17 @@ const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
 const functions = app.slice(app.indexOf('function renderMarketHeader('), app.indexOf('function toast('));
 const trackedCoinLock = app.slice(app.indexOf('function updateTrackedCoinLock('), app.indexOf("$('setting-type').addEventListener"));
 
-test('Tracked Coin is locked only while the bot is running', () => {
-  const field = {};
-  const sandbox = { $: () => field };
+test('Tracked Coin and Select Top Trading are locked only while the bot is running', () => {
+  const fields = { 'setting-asset': {}, 'setting-selectTopTrading': {} };
+  const sandbox = { $: id => fields[id] };
   vm.createContext(sandbox);
   vm.runInContext(trackedCoinLock, sandbox);
   sandbox.updateTrackedCoinLock({ running: true });
-  assert.equal(field.disabled, true);
+  assert.equal(fields['setting-asset'].disabled, true);
+  assert.equal(fields['setting-selectTopTrading'].disabled, true);
   sandbox.updateTrackedCoinLock({ running: false });
-  assert.equal(field.disabled, false);
+  assert.equal(fields['setting-asset'].disabled, false);
+  assert.equal(fields['setting-selectTopTrading'].disabled, false);
 });
 
 test('changing Tracked Coin immediately previews the selected SOL pair', () => {

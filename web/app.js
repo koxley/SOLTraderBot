@@ -3,7 +3,7 @@ tg?.ready(); tg?.expand();
 const $ = id => document.getElementById(id);
 const marketFields = document.createElement('div');
 marketFields.className = 'settings-grid';
-marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label>';
+marketFields.innerHTML = '<label class="strategy-field" for="setting-marketType">Mode<select id="setting-marketType" name="marketType"><option value="pair">Paired trading</option><option value="track">Single coin tracking — no trades</option></select></label><label class="strategy-field" for="setting-asset">Tracked coin<select id="setting-asset" name="asset"></select></label><label class="strategy-field top-trading-option" for="setting-selectTopTrading"><span><input id="setting-selectTopTrading" name="selectTopTrading" type="checkbox" value="true"> Select Top Trading</span><small>Available only while stopped. At Start, use the stored Asset List coin with the highest Jupiter one-hour percentage gain.</small></label>';
 $('strategy-fields').prepend(marketFields);
 const riskSettings = document.createElement('section');
 riskSettings.className = 'risk-settings';
@@ -30,7 +30,7 @@ function fillSettings(settings) {
     tracked.add(legacy, 0);
   }
 
-  for (const [key, value] of Object.entries(settings)) { const field = $(`setting-${key}`); if (field) field.value = value; }
+  for (const [key, value] of Object.entries(settings)) { const field = $(`setting-${key}`); if (field) { if (field.type === 'checkbox') field.checked = value === true; else field.value = value; } }
   if (!tracked.value && settings.marketType !== 'track') tracked.value = state?.assets?.[0]?.symbol || '';
   updateStrategyFields();
 }
@@ -47,8 +47,13 @@ function updateStrategyFields() {
 }
 function updateTrackedCoinLock(s) {
   $('setting-asset').disabled = s.running;
+  $('setting-selectTopTrading').disabled = s.running;
 }
 $('setting-type').addEventListener('change', updateStrategyFields);
+$('setting-selectTopTrading').addEventListener('change', event => {
+  if (event.target.checked) $('setting-marketType').value = 'pair';
+  previewTrackedCoin();
+});
 const number = (v, max = 6) => Number(v).toLocaleString('en-US', { maximumFractionDigits: max });
 const text = (id, value) => { $(id).textContent = value; };
 function renderMarketHeader(market, preview = false) {
@@ -361,6 +366,7 @@ $('reset-strategy').addEventListener('click', () => { if (state) { fillSettings(
 $('strategy-form').addEventListener('submit', async event => {
   event.preventDefault(); if (savingSettings) return;
   const settings = Object.fromEntries(new FormData(event.currentTarget));
+  settings.selectTopTrading = $('setting-selectTopTrading').checked;
   savingSettings = true; $('settings-error').hidden = true; if (state) render(state);
   try {
     const result = await api('strategy', 'POST', settings);
