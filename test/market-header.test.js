@@ -28,10 +28,10 @@ test('Select Top Trading is placed directly under the Trading asset heading', ()
   assert.ok(heading >= 0 && option > heading && option < description);
 });
 
-test('app header uses the Sol Trader Bot name', () => {
-  assert.match(html, /<title>Sol Trader Bot · Automatic trading<\/title>/);
-  assert.match(html, /aria-label="Sol Trader Bot home"/);
-  assert.match(html, />Sol <span class="light">Trader Bot<\/span>/);
+test('app header uses the SOL Trader Bot name', () => {
+  assert.match(html, /<title>SOL Trader Bot · Automatic trading<\/title>/);
+  assert.match(html, /aria-label="SOL Trader Bot home"/);
+  assert.match(html, />SOL <span class="light">Trader Bot<\/span>/);
 });
 
 test('changing Tracked Coin immediately previews the selected SOL pair', () => {

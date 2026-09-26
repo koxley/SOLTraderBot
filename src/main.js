@@ -45,7 +45,7 @@ try {
     const message = await engine.tick();
     if (message) { try { await telegram.send(message); } catch { console.error('Trade event saved; Telegram notification failed.'); } }
   }, 1000);
-  console.log(`Sol Trader Bot started in ${cfg.mode.toUpperCase()} mode. Mini App on port ${port}. Strategy STOPPED.`);
+  console.log(`SOL Trader Bot started in ${cfg.mode.toUpperCase()} mode. Mini App on port ${port}. Strategy STOPPED.`);
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);
   await telegram.poll();
 } catch (error) {
