@@ -1,7 +1,7 @@
 import { jsonRequest } from './providers.js';
 import { UserError, format } from './config.js';
 
-export const HELP = `SOL TRADER — automatic SOL-funded token trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only the selected asset bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
+export const HELP = `Sol Trader Bot — automatic SOL-funded token trading\n\n/start — start automatic trading\n/stop — stop trading, keep position\n/close — stop and close the bot's open position\n/app — open the Mini App\n/status — strategy and limits\n/balance — balances\n/history — recent trades\n/reconcile — check an unsettled transaction\n/help — show commands\n\nStop does not sell. Close Open Positions sells only the selected asset bought by this bot. A submitted transaction cannot be cancelled. Strategy exits work only while this process is online and trading is running.`;
 
 export class Telegram {
   constructor(cfg, engine, publicUrl) { Object.assign(this, { cfg, engine, publicUrl }); this.stopped = false; }
@@ -15,17 +15,17 @@ export class Telegram {
     const hook = await this.api('getWebhookInfo', {});
     if (hook.url) throw new Error('This bot has a webhook. Remove it before using polling.');
     const optional = async action => { try { await action(); } catch { console.warn('Telegram profile/menu update or startup notification deferred. Bot commands remain available.'); } };
-    await optional(() => this.api('setMyName', { name: 'SOL TRADER' }));
+    await optional(() => this.api('setMyName', { name: 'Sol Trader Bot' }));
     await optional(() => this.api('setMyCommands', { commands: [
       ['app', 'Open trading dashboard'], ['start', 'Start automatic trading'], ['stop', 'Stop trading; keep position'],
       ['close', 'Stop and sell the bot position'], ['status', 'Strategy status'], ['balance', 'Wallet balances'],
       ['history', 'Recent trades'], ['reconcile', 'Check unsettled trades'], ['help', 'Help'],
     ].map(([command, description]) => ({ command, description })) }));
     if (this.publicUrl) await optional(() => this.api('setChatMenuButton', { chat_id: this.cfg.owner,
-      menu_button: { type: 'web_app', text: 'Open SOL TRADER', web_app: { url: this.publicUrl } } }));
-    await optional(() => this.send(`SOL TRADER is online in ${this.cfg.mode.toUpperCase()} mode and STOPPED. Use /app or /start.`, {
+      menu_button: { type: 'web_app', text: 'Open Sol Trader Bot', web_app: { url: this.publicUrl } } }));
+    await optional(() => this.send(`Sol Trader Bot is online in ${this.cfg.mode.toUpperCase()} mode and STOPPED. Use /app or /start.`, {
       reply_markup: { keyboard: [[{ text: 'Start' }, { text: 'Stop' }], [{ text: 'Close Open Positions' }],
-        ...(this.publicUrl ? [[{ text: 'Open SOL TRADER', web_app: { url: this.publicUrl } }]] : [])], resize_keyboard: true },
+        ...(this.publicUrl ? [[{ text: 'Open Sol Trader Bot', web_app: { url: this.publicUrl } }]] : [])], resize_keyboard: true },
     }));
   }
   async handle(update) {
@@ -46,7 +46,7 @@ export class Telegram {
           .map(o => `${new Date(o.time).toISOString()} ${o.side} ${o.status}\n${o.signature || o.id}`).join('\n\n') || 'No trades yet.'; break;
         case '/reconcile': response = await this.engine.reconcile(); break;
         case '/app':
-          if (this.publicUrl) return this.send('Open SOL TRADER', { reply_markup: { inline_keyboard: [[{ text: 'Open dashboard', web_app: { url: this.publicUrl } }]] } });
+          if (this.publicUrl) return this.send('Open Sol Trader Bot', { reply_markup: { inline_keyboard: [[{ text: 'Open dashboard', web_app: { url: this.publicUrl } }]] } });
           response = 'Set PUBLIC_APP_URL to your HTTPS deployment URL and restart to enable the Mini App.'; break;
         default: response = HELP;
       }

@@ -2,7 +2,7 @@
 
 > **Current release:** selectable SOL-funded paired trading plus no-trade single-coin tracking. See [SOL-CBBTC.md](SOL-CBBTC.md) for the default cbBTC market.
 
-# SOL TRADER
+# Sol Trader Bot
 
 A self-hosted, single-owner Telegram Mini App for automatic SOL-funded spot trading on Solana, plus individual price and strategy-signal tracking for SOL, wrapped ETH, wrapped DOGE, wrapped XRP, USDC, and USDT. Paired trading buys the selected Solana token with SOL and sells it back to SOL. Single-coin tracking observes the selected coin without opening positions or submitting swaps. The user controls **Start**, **Stop**, and **Close Open Positions**. There are no manual trade commands.
 
@@ -25,7 +25,7 @@ Open **http://127.0.0.1:3001**. The isolated preview has simulated prices, a sam
 2. Run `pnpm run setup`. This creates a private `.env` without generating or storing a wallet key. It never overwrites an existing `.env`.
 3. Edit `.env` locally: set `TELEGRAM_BOT_TOKEN`, your numeric `TELEGRAM_OWNER_ID`, and `PUBLIC_APP_URL` to your HTTPS deployment origin. Do not paste keys into a chat. Use the user's ID from an incoming Bot API update, not a username or group ID.
 4. Host this Node process behind HTTPS, forwarding to port 3000. Telegram Mini Apps require a public HTTPS URL. Use a persistent disk for `DATA_DIR`, one process, and no webhook; this bot uses long polling. Configure `HOST=0.0.0.0` only when your hosting platform or container requires it.
-5. Run `pnpm start`. The bot registers commands and an **Open SOL TRADER** menu button for your account. Open `/app` in a private Telegram conversation with your bot.
+5. Run `pnpm start`. The bot registers commands and an **Open Sol Trader Bot** menu button for your account. Open `/app` in a private Telegram conversation with your bot.
 
 Other accounts, groups, unsigned browser API calls, altered initData, and expired Telegram sessions are rejected. Reopen the Mini App after one hour to refresh the Telegram session. Opening the production URL directly in an ordinary browser cannot control the wallet.
 
